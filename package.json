@@ -1,0 +1,46 @@
+{
+  "name": "mg-purge",
+  "version": "0.1.0",
+  "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware — operator-priority system prompt, boost tail block, refusal detection + single re-nudge, thinking-tag stripping, preset/role packs.",
+  "type": "module",
+  "files": [
+    "mg-purge.middleware.js",
+    "presets",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "magpie",
+    "magpie-middleware",
+    "dsh-purge",
+    "purge",
+    "破甲",
+    "prompt-injection",
+    "system-prompt",
+    "unrestricted",
+    "llm-gateway"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hotker/mg-purge.git"
+  },
+  "homepage": "https://github.com/hotker/mg-purge",
+  "magpie": {
+    "middleware": "./mg-purge.middleware.js",
+    "options": {
+      "preset": "unrestricted",
+      "position": "append",
+      "override": true,
+      "boost": true,
+      "refusalRetry": true,
+      "stripThink": true,
+      "agents": [],
+      "models": [],
+      "excludeAgents": []
+    }
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

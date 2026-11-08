@@ -1,0 +1,11 @@
+{
+  "package": "mg-purge",
+  "name": "mg-purge",
+  "kind": "middleware",
+  "community": true,
+  "icon": "https://raw.githubusercontent.com/hotker/mg-purge/main/presets/icon.png",
+  "summary": {
+    "en": "破甲 for magpie: dsh-purge's prompt-injection layer as gateway middleware — operator-priority system prompt, boost tail block, refusal correction and thinking-tag stripping, for every agent behind one gateway.",
+    "zh": "破甲 for magpie：把 dsh-purge 的提示词注入层做成网关中间件——操作者优先级系统提示词、boost 尾部强化段、拒绝检测加固与 think 标签剥离，一个网关下所有 agent 共享。"
+  }
+}
