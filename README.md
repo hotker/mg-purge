@@ -22,19 +22,31 @@ dsh-purge 里天然属于网关层的，只有**提示词注入这一层**。mg-
 
 ## 安装
 
-从 magpie 的 **Plugins › Discover** 安装，或：
+两种装法：
 
 ```sh
+# 从 git 仓库直装（owner/repo，最省事，无需发布）
 magpie plugin add hotker/mg-purge
+
+# 或自定义索引源（见下），装好后可 Discover 一键装
+magpie plugin add mg-purge   # 发布到 npm 后
 ```
 
-在 **Plugins › Installed › Options** 里配置，或：
+在 **Plugins › Installed › Options** 里配置，或在看板里直接改，或：
 
 ```sh
 magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalRetry":true,"stripThink":true}'
 ```
 
 装好后 magpie 网关（`127.0.0.1:3425`）上流过的每个 agent 请求都会带上注入。新会话生效。
+
+### GitHub Action：打 tag 自动发布
+
+`.github/workflows/release.yml`：推一个 `v*` tag 时自动 ① 跑中间件用例 ② `npm pack`
+③ 发布到 npm（`NPM_TOKEN` secret，已发布过的版本自动跳过） ④ 建 GitHub Release 并附 `.tgz`
+⑤ 刷新 `registry.json`。一次配置，之后 `git tag v0.2.2 && git push --tags` 即发布。
+
+要提交到 magpie-community 默认市场时，看 [`docs/PR-magpie-community.md`](docs/PR-magpie-community.md)（含差异说明与去重答复）。
 
 ## 看板与统计
 

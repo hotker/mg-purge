@@ -1,0 +1,16 @@
+# NOTICE
+
+mg-purge 基于以下项目，保留其作者署名与 MIT 许可：
+
+- **dsh-purge（破甲）** — 原作者 小杨 / [YuJunZhiXue](https://github.com/YuJunZhiXue/dsh-purge)，
+  社区维护版 [kingcharleslzy-ai/dsh-purge](https://github.com/kingcharleslzy-ai/dsh-purge)（MIT）。
+  本项目的预设提示词、`<dsh_boost>` 尾部段落、拒绝话术 `nudge`、拒绝检测规则
+  （`REFUSAL_PATTERNS`）移植自其提示词注入层（`lib/boost.js`、`lib/refusal-retry.js`、
+  `presets/unrestricted/agent.cordis.yml`）。
+- **magpie** — [yetone/magpie](https://github.com/yetone/magpie)（MIT）。中间件与页面的
+  运行时契约来自其文档与源码。
+- **magpie-community/plugins — middleware-think-tags**（MIT）。think 标签剥离的跨块
+  carry 逻辑移植自其 `think-tags.middleware.js`。
+
+这些文件在本仓库内实现为一个 magpie 网关中间件；原始版权与许可归各自作者所有。
+完整的 MIT 条款见 [LICENSE](LICENSE)。

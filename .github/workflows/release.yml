@@ -1,0 +1,77 @@
+name: release
+
+# On a version tag (v0.2.1), this: checks the middleware cases, packs the
+# plugin, publishes it to npm (the install target magpie resolves for the
+# custom index source), attaches the .tgz to a GitHub Release, and refreshes
+# registry.json so the custom index always names the current version.
+#
+# Setup once, in the repo's Settings → Secrets → Actions:
+#   NPM_TOKEN   an npm automation token (Granular or Classic) with publish rights
+#
+# Custom index source users add:
+#   https://raw.githubusercontent.com/hotker/mg-purge/main/registry.json
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check the middleware cases
+        run: node --test run-cases.mjs
+
+      - name: Pack
+        id: pack
+        run: |
+          npm pack --ignore-scripts --json > pack.json
+          FILE="$(node -e 'console.log(require("./pack.json")[0].filename)')"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "sha512=sha512-$(openssl dgst -sha512 -binary "$FILE" | openssl base64 -A)" >> "$GITHUB_OUTPUT"
+          echo "packed $FILE"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # a version npm already has is fine (tag re-push); skip, don't fail
+          if npm view "$(node -p 'require("./package.json").name')@$(node -p 'require("./package.json").version')" version >/dev/null 2>&1; then
+            echo "already on npm — skipping publish"
+          else
+            npm publish --ignore-scripts --access public
+          fi
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release create "$TAG" "${{ steps.pack.outputs.file }}" \
+            --title "$TAG" \
+            --notes "mg-purge $TAG — see README for options and the dashboard. Install: \`magpie plugin add mg-purge\` (or the tarball asset)." \
+            --verify-tag || \
+          gh release upload "$TAG" "${{ steps.pack.outputs.file }}" --clobber
+
+      - name: Refresh registry.json
+        run: |
+          URL="https://github.com/hotker/mg-purge/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.file }}"
+          node scripts/build-registry.mjs --tgz "$URL"
+          if ! git diff --quiet registry.json; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add registry.json
+            git commit -m "registry.json: mg-purge ${{ github.ref_name }}"
+            git push origin HEAD:main
+          fi
