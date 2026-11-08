@@ -1,6 +1,6 @@
 {
   "name": "mg-purge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware, with a dashboard page and a Usage panel — operator-priority system prompt, boost tail block, refusal detection + single re-nudge, thinking-tag stripping, live parameter tuning and success-rate statistics.",
   "type": "module",
   "files": [
@@ -8,6 +8,8 @@
     "presets",
     "page",
     "panel",
+    "registry.json",
+    "registry-entry.json",
     "README.md",
     "LICENSE"
   ],
@@ -33,7 +35,12 @@
     "middleware": "./mg-purge.middleware.js",
     "page": {
       "title": "mg-purge",
-      "titles": { "zh": "破甲 mg-purge", "zh-TW": "破甲 mg-purge", "ja": "mg-purge", "de": "mg-purge" },
+      "titles": {
+        "zh": "破甲 mg-purge",
+        "zh-TW": "破甲 mg-purge",
+        "ja": "mg-purge",
+        "de": "mg-purge"
+      },
       "file": "page/index.html",
       "icon": "page/icon.svg",
       "keepAlive": true
@@ -42,11 +49,18 @@
       {
         "slot": "usage",
         "title": "mg-purge 成功率",
-        "titles": { "zh": "mg-purge 成功率", "zh-TW": "mg-purge 成功率", "ja": "mg-purge success", "de": "mg-purge Erfolg" },
+        "titles": {
+          "zh": "mg-purge 成功率",
+          "zh-TW": "mg-purge 成功率",
+          "ja": "mg-purge success",
+          "de": "mg-purge Erfolg"
+        },
         "file": "panel/index.html"
       }
     ],
-    "permissions": ["usage:summary"],
+    "permissions": [
+      "usage:summary"
+    ],
     "options": {
       "preset": "unrestricted",
       "position": "append",

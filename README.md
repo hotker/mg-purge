@@ -78,6 +78,31 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 - **`nudge`** — 非空则覆盖内置加固话术。
 - **`refusalPatterns`** — 额外拒绝正则（字符串数组），叠加在内置规则上。
 
+## 收录到 magpie Discover
+
+仓库里有两个文件：
+
+- **`registry.json`** —— 本仓库的**自定义索引源**格式（`{version, plugins:[…]}`，`kind:"middleware"`）。在 magpie 里「插件 → 发现 → 添加索引源」填：
+  ```
+  https://raw.githubusercontent.com/hotker/mg-purge/main/registry.json
+  ```
+  即可让 Discover 列出 mg-purge 并一键安装。字段严格按 magpie 的 `plugin.Listing`：`package / name / kind / summary{en,zh}`，中间件只给 `kind`、不给 `providers`。
+- **`registry-entry.json`** —— 提交到 [magpie-community/plugins](https://github.com/magpie-community/plugins) 的 `registry.json` 时用的**单个条目**（PR 用）。上游收录后，所有 magpie 内置市场都会列出它。
+
+两条路可同时用：自定义源立刻生效、不依赖上游审核；PR 收录则进入默认市场。
+
+## 成功率口径（诚实说明）
+
+看板画的是 magpie `usage:summary` 能给的**最细真实粒度**：
+
+| 维度 | 是否可得 | 说明 |
+| --- | --- | --- |
+| 总量成功率（成功/总调用） | ✅ | 来自 `usage:summary` 的 calls/errors |
+| **按模型**成功率 | ✅ | 来自 `usage:summary.models[]` |
+| **按 agent** 成功率 | ⚠️ 需 host 服务 | `usage:summary` 不含 agent 维度；要真按 agent 分，只能给插件加一个常驻本地服务（Bun host + `magpie.page.service`）去读完整 usage 账本 |
+
+**按 agent 维度不是纯页面能拿到的数据。** 为了显示它而给一个零依赖中间件插件引入常驻 Bun 服务、端口管理与跨进程 IPC，不划算；因此 mg-purge 以**模型维度为真实统计粒度**，不做近似冒充。需要 agent 维度时，用 magpie 自带 Usage 页（它有完整账本）。
+
 ## 协议支持
 
 注入按各 API 自己的位置落地：**Anthropic** `system`、**Chat** 首条 system/developer 消息、**Responses** `instructions`、**Gemini** `systemInstruction`。think 剥离与拒绝检测覆盖 Anthropic / Chat / Responses / Gemini 的流式与整包回复。
