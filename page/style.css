@@ -16,10 +16,6 @@ h2 { font-size: 14px; font-weight: 600; margin: 22px 0 8px; }
 .seg button { font: inherit; border: 0; background: none; color: inherit; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
 .seg button[aria-selected="true"] { background: var(--magpie-accent-soft, Highlight); color: var(--magpie-accent, HighlightText); }
 
-.tbl { border-collapse: collapse; width: 100%; }
-.tbl th { text-align: left; font-weight: 500; font-size: 12px; color: var(--magpie-muted, GrayText); padding: 6px 8px; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
-.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
-.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .settings { display: flex; flex-direction: column; gap: 2px; }
 .srow { display: flex; align-items: center; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
@@ -43,15 +39,4 @@ h2 { font-size: 14px; font-weight: 600; margin: 22px 0 8px; }
 .flash.show { opacity: 1; max-height: 40px; }
 .flash.bad { color: #d33; }
 
-.toolbar { display: flex; align-items: center; gap: 12px; margin: 6px 0 2px; flex-wrap: wrap; }
-.tm, .tb { font: inherit; color: inherit; background: var(--magpie-card, ButtonFace); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-.tb:hover { border-color: var(--magpie-muted, ButtonBorder); }
-.tb:disabled { opacity: .55; cursor: default; }
-.tbnote { font-size: 11.5px; }
 
-.exportbox { margin: 16px 0 8px; border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 10px; background: var(--magpie-card, Canvas); padding: 10px 12px; }
-.exportbox[hidden] { display: none; }
-.ebhead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.ebhead .spacer { flex: 1; }
-.ebhead .tb { padding: 3px 10px; }
-.exportbox textarea { width: 100%; box-sizing: border-box; min-height: 220px; resize: vertical; font-family: var(--magpie-code, ui-monospace, Menlo, monospace); font-size: 12px; line-height: 1.4; color: var(--magpie-fg, CanvasText); background: var(--magpie-bg, Canvas); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 8px; padding: 8px 10px; }

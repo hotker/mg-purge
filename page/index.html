@@ -12,11 +12,6 @@
 <h1>破甲 · mg-purge <span class="ver" id="ver"></span></h1>
 <p class="muted" id="lede">dsh-purge 的提示词注入层，跑在 magpie 网关上。下面改的参数即时生效（网关约 2 秒内重新加载）。</p>
 
-<div class="toolbar">
-  <button type="button" id="exportBtn" class="tb">导出诊断</button>
-  <span class="muted tbnote">下载本插件配置 + 全局用量快照（JSON，不联网、不含 prompt/密钥）。逐次请求日志在 magpie 服务日志里，不在此。</span>
-</div>
-
 <section class="cards" id="statcards">
   <div class="card"><div class="k">调用</div><div class="v" id="stCalls">–</div></div>
   <div class="card"><div class="k">错误</div><div class="v" id="stErrors">–</div></div>
@@ -38,17 +33,5 @@
 
 <p class="muted foot">全网关调用成功率 = 成功调用 / 总调用（数据为 usage 全局汇总；错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
 
-<div id="exportBox" class="exportbox" hidden>
-  <div class="ebhead">
-    <strong>诊断 JSON</strong>
-    <span class="muted" id="ebnote">已复制到剪贴板；若没复制成功，点「全选」后手动复制。</span>
-    <span class="spacer"></span>
-    <button type="button" id="ebSelect" class="tb">全选</button>
-    <button type="button" id="ebCopy" class="tb">复制</button>
-    <button type="button" id="ebDownload" class="tb">尝试下载</button>
-    <button type="button" id="ebClose" class="tb">关闭</button>
-  </div>
-  <textarea id="ebText" readonly spellcheck="false"></textarea>
-</div>
 </body>
 </html>

@@ -12,10 +12,3 @@ body { margin: 0; font: 13px/1.45 var(--magpie-font, system-ui); color: var(--ma
 .bar i.low { background: #d97706; }
 .foot { font-size: 11.5px; }
 .muted { color: var(--magpie-muted, GrayText); }
-.link { font: inherit; color: var(--magpie-accent, #4f46e5); background: none; border: 0; padding: 0; cursor: pointer; }
-.link:disabled { opacity: .5; }
-.exportbox { margin-top: 10px; border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 8px; padding: 8px; }
-.exportbox[hidden] { display: none; }
-.ebhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.ebhead .tb { font: inherit; background: var(--magpie-card, ButtonFace); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
-.exportbox textarea { width: 100%; box-sizing: border-box; min-height: 140px; font-family: var(--magpie-code, ui-monospace, Menlo, monospace); font-size: 11.5px; background: var(--magpie-bg, Canvas); color: var(--magpie-fg, CanvasText); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 6px; padding: 6px 8px; }
