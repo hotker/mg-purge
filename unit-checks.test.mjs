@@ -111,3 +111,23 @@ test("gemini streamed parts still get think stripped", () => {
   }
   assert.equal(text, "Hello")
 })
+
+// B: a non-2xx reply is logged with status/model/injected — never the prompt
+test("error replies are logged with status, models, injected flag", () => {
+  const ctx = { protocol: "chat", model: "", agent: "codex", status: 502, options: { preset: "unrestricted", stripThink: false }, state: {} }
+  m.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "SECRET PROMPT" }] }, ctx)
+  const body = { model: "group/jarivs", error: { type: "upstream_error" } }
+  const logs = withLog(() => m.onResponse(body, ctx))
+  const line = logs.find((l) => l.includes("[mg-purge] error 502"))
+  assert.ok(line, "should log the 502")
+  assert.ok(line.includes("status") || line.includes("502"))
+  assert.ok(line.includes("injected=yes"))
+  assert.ok(!line.includes("SECRET PROMPT"), "must not log the prompt")
+})
+
+test("logErrors:false silences the error log", () => {
+  const ctx = { protocol: "chat", model: "", agent: "x", status: 502, options: { preset: "unrestricted", stripThink: false, logErrors: false }, state: {} }
+  m.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+  const logs = withLog(() => m.onResponse({ model: "x", error: { type: "t" } }, ctx))
+  assert.equal(logs.filter((l) => l.includes("[mg-purge] error")).length, 0)
+})

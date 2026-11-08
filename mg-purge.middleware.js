@@ -305,6 +305,7 @@ export function onRequest(body, ctx) {
     decided: false,
     buffered: "",
     strippers: {}, // per-stream-key tag stripper state, kept for the request
+    injected: !!prompt, // did this request carry the injection (for error logs)
   }
   return prompt ? out : undefined
 }
@@ -350,7 +351,7 @@ export function onEvent(ev, ctx) {
         // so a module-scope counter set here is not the one the GUI or onUsage
         // sees. A line in magpie's log is the one place it is actually readable.
         try {
-          console.log("[mg-purge] refusal opening detected (agent=%s model=%s)", ctx.agent || "?", ctx.model || "?")
+          console.log(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
         } catch { /* logging must never break a request */ }
       }
     }
@@ -362,6 +363,25 @@ export function onEvent(ev, ctx) {
 export function onResponse(body, ctx) {
   const o = ctx.options || {}
   if (!body || typeof body !== "object") return
+
+  // 502 / error diagnostics: a non-2xx reply that reaches onResponse is logged
+  // once, with what decides its cause — status, the agent/model the request
+  // named, the reply's own model (magpie rewrites it), protocol, and how big
+  // the injected prompt was. This is how the earlier 502s get told apart:
+  // provider rejecting a long prompt vs a content filter vs a real upstream
+  // fault. Opt out with logErrors:false. Never logs a prompt or a key.
+  if (typeof ctx.status === "number" && ctx.status >= 400 && o.logErrors !== false) {
+    const st = ctx.state.purge
+    try {
+      const errType = body && ((body.error && (body.error.type || body.error.code)) || body.type || "")
+      console.log(
+        `[mg-purge] error ${ctx.status} protocol=${ctx.protocol || "?"} agent=${ctx.agent || "?"}` +
+        ` reqModel=${ctx.model || "?"} replyModel=${(body && body.model) || "-"}` +
+        ` injected=${st && st.injected ? "yes" : "no"} errType=${errType || "-"}`,
+      )
+    } catch { /* logging must never break a request */ }
+  }
+
   // onRequest only ever writes ctx.state.purge after appliesTo passed. So its
   // presence is the truthful "this request passed the agent/model filter"
   // signal — safer than re-running appliesTo on the reply's model field, which

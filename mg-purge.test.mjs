@@ -88,3 +88,12 @@ test("gemini streamed parts get think stripped", () => {
 test("the module exports no events whitelist", () => {
   assert.equal(mod.events, undefined)
 })
+
+test("error replies are logged with status, models, injected flag (no prompt)", () => {
+  const ctx = { protocol: "chat", model: "", agent: "codex", status: 502, options: { preset: "unrestricted", stripThink: false }, state: {} }
+  mod.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "SECRET" }] }, ctx)
+  const logs = withLog(() => mod.onResponse({ model: "group/jarivs", error: { type: "upstream_error" } }, ctx))
+  const line = logs.find((l) => l.includes("[mg-purge] error 502"))
+  assert.ok(line && line.includes("injected=yes"))
+  assert.ok(!line.includes("SECRET"))
+})
