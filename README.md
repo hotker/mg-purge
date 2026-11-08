@@ -52,10 +52,10 @@ magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalRe
 
 mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panels`）：
 
-- **整页看板**（左侧栏「mg-purge」）：四张卡（调用 / 错误 / 成功率 / 成本）+ 按模型成功率表 + **全部参数的可视编辑**（预设、位置、override、boost、refusalRetry、stripThink、agents/excludeAgents/models、systemPrompt、nudge、refusalPatterns）。改完即写回插件 options，网关自动热加载，无需重启。
-- **Usage 面板**（Usage 页底部）：一行看今天成功率、调用数、错误数，带进度条。
+- **整页看板**（左侧栏「mg-purge」）：四张卡（调用 / 错误 / 调用成功率 / 成本）+ 按模型调用成功率表 + **全部参数的可视编辑**（预设、位置、override、boost、refusalRetry、stripThink、agents/excludeAgents/models、systemPrompt、nudge、refusalPatterns）。改完即写回插件 options，网关自动热加载，无需重启。
+- **Usage 面板**（Usage 页底部）：一行看今天调用成功率、调用数、错误数，带进度条。
 
-**成功率口径**：`成功率 = 成功调用 / 总调用`，错误含 `status ≥ 400` 与 `errType` 非空。数据来自 magpie 的 `usage:summary` 读（插件声明 `permissions: ["usage:summary"]`，只给总量与每模型汇总，不给 key/账号/会话）。
+**调用成功率口径**：`调用成功率 = 成功调用 / 总调用`，错误含 `status ≥ 400` 与 `errType` 非空。数据来自 magpie 的 `usage:summary` 读（插件声明 `permissions: ["usage:summary"]`，只给总量与每模型汇总，不给 key/账号/会话）。
 
 **网关内计数**：middleware 另导出 `onUsage` / `stats` / `successRate`，在网关进程内累计调用/成功/错误/被拒及按 agent、按模型分布；看板画的是 `usage:summary` 实时汇总，两者口径一致。
 
@@ -103,15 +103,15 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 
 两条路可同时用：自定义源立刻生效、不依赖上游审核；PR 收录则进入默认市场。
 
-## 成功率口径（诚实说明）
+## 调用成功率口径（诚实说明）
 
 看板画的是 magpie `usage:summary` 能给的**最细真实粒度**：
 
 | 维度 | 是否可得 | 说明 |
 | --- | --- | --- |
-| 总量成功率（成功/总调用） | ✅ | 来自 `usage:summary` 的 calls/errors |
-| **按模型**成功率 | ✅ | 来自 `usage:summary.models[]` |
-| **按 agent** 成功率 | ⚠️ 需 host 服务 | `usage:summary` 不含 agent 维度；要真按 agent 分，只能给插件加一个常驻本地服务（Bun host + `magpie.page.service`）去读完整 usage 账本 |
+| 总量调用成功率（成功/总调用） | ✅ | 来自 `usage:summary` 的 calls/errors |
+| **按模型**调用成功率 | ✅ | 来自 `usage:summary.models[]` |
+| **按 agent** 调用成功率 | ⚠️ 需 host 服务 | `usage:summary` 不含 agent 维度；要真按 agent 分，只能给插件加一个常驻本地服务（Bun host + `magpie.page.service`）去读完整 usage 账本 |
 
 **按 agent 维度不是纯页面能拿到的数据。** 为了显示它而给一个零依赖中间件插件引入常驻 Bun 服务、端口管理与跨进程 IPC，不划算；因此 mg-purge 以**模型维度为真实统计粒度**，不做近似冒充。需要 agent 维度时，用 magpie 自带 Usage 页（它有完整账本）。
 

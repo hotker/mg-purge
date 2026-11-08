@@ -15,7 +15,7 @@
 <section class="cards" id="statcards">
   <div class="card"><div class="k">调用</div><div class="v" id="stCalls">–</div></div>
   <div class="card"><div class="k">错误</div><div class="v" id="stErrors">–</div></div>
-  <div class="card ok"><div class="k">成功率</div><div class="v" id="stRate">–</div></div>
+  <div class="card ok"><div class="k">调用成功率</div><div class="v" id="stRate">–</div></div>
   <div class="card"><div class="k">成本</div><div class="v" id="stCost">–</div></div>
 </section>
 
@@ -25,12 +25,12 @@
   <button type="button" data-p="30d">30 天</button>
 </div>
 
-<h2>按模型成功率</h2>
-<table class="tbl"><thead><tr><th>模型</th><th class="num">调用</th><th class="num">错误</th><th class="num">成功率</th></tr></thead><tbody id="modelRows"><tr><td colspan="4" class="muted">…</td></tr></tbody></table>
+<h2>按模型调用成功率</h2>
+<table class="tbl"><thead><tr><th>模型</th><th class="num">调用</th><th class="num">错误</th><th class="num">调用成功率</th></tr></thead><tbody id="modelRows"><tr><td colspan="4" class="muted">…</td></tr></tbody></table>
 
 <h2>参数调整</h2>
 <div id="settings" class="settings"></div>
 
-<p class="muted foot">成功率 = 成功调用 / 总调用（错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
+<p class="muted foot">调用成功率 = 成功调用 / 总调用（错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
 </body>
 </html>
