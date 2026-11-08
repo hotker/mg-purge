@@ -1,0 +1,44 @@
+:root { color-scheme: light dark; }
+body { margin: 0; padding: 20px 24px; font: 13px/1.5 var(--magpie-font, system-ui); color: var(--magpie-fg, CanvasText); background: var(--magpie-bg, Canvas); max-width: 900px; }
+h1 { font-size: 18px; font-weight: 650; margin: 0 0 4px; letter-spacing: -.01em; }
+h1 .ver { font-size: 11px; color: var(--magpie-muted, GrayText); font-weight: 400; }
+h2 { font-size: 14px; font-weight: 600; margin: 22px 0 8px; }
+.muted { color: var(--magpie-muted, GrayText); }
+.foot { margin-top: 20px; font-size: 11.5px; }
+
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+.card { background: var(--magpie-card, Canvas); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 10px; padding: 12px 14px; }
+.card .k { font-size: 11.5px; color: var(--magpie-muted, GrayText); }
+.card .v { font-size: 22px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.card.ok .v { color: var(--magpie-accent, Highlight); }
+
+.seg { display: inline-flex; gap: 2px; background: var(--magpie-card, ButtonFace); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 8px; padding: 2px; }
+.seg button { font: inherit; border: 0; background: none; color: inherit; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-selected="true"] { background: var(--magpie-accent-soft, Highlight); color: var(--magpie-accent, HighlightText); }
+
+.tbl { border-collapse: collapse; width: 100%; }
+.tbl th { text-align: left; font-weight: 500; font-size: 12px; color: var(--magpie-muted, GrayText); padding: 6px 8px; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
+.tbl td { padding: 6px 8px; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
+.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.settings { display: flex; flex-direction: column; gap: 2px; }
+.srow { display: flex; align-items: center; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--magpie-line, ButtonBorder); }
+.srow .who { flex: 1; min-width: 0; }
+.srow .name { font-weight: 500; }
+.srow .sub { font-size: 11.5px; color: var(--magpie-muted, GrayText); }
+.srow .ctl { flex: 0 0 340px; display: flex; justify-content: flex-end; }
+.srow .ctl input[type=text], .srow .ctl textarea { width: 100%; font: inherit; color: inherit; background: var(--magpie-card, Field); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 6px; padding: 5px 8px; }
+.srow .ctl textarea { resize: vertical; }
+
+.pick { font: inherit; color: inherit; background: var(--magpie-card, ButtonFace); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.tg { font: inherit; background: var(--magpie-card, ButtonFace); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 20px; padding: 3px 14px; cursor: pointer; }
+.tg.on { background: var(--magpie-accent, Highlight); color: var(--magpie-accent-soft, HighlightText); border-color: transparent; }
+
+.popmenu { position: fixed; z-index: 20; min-width: 180px; background: var(--magpie-card, Canvas); border: 1px solid var(--magpie-line, ButtonBorder); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; display: flex; flex-direction: column; }
+.popmenu button { font: inherit; text-align: left; background: none; border: 0; color: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.popmenu button:hover { background: var(--magpie-accent-soft, Highlight); }
+.popmenu button.on { color: var(--magpie-accent, Highlight); font-weight: 600; }
+
+.flash { opacity: 0; max-height: 0; overflow: hidden; transition: opacity .18s, max-height .18s; font-size: 12px; color: var(--magpie-accent, Highlight); margin: 8px 0; }
+.flash.show { opacity: 1; max-height: 40px; }
+.flash.bad { color: #d33; }

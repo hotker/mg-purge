@@ -1,11 +1,13 @@
 {
   "name": "mg-purge",
-  "version": "0.1.0",
-  "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware — operator-priority system prompt, boost tail block, refusal detection + single re-nudge, thinking-tag stripping, preset/role packs.",
+  "version": "0.2.0",
+  "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware, with a dashboard page and a Usage panel — operator-priority system prompt, boost tail block, refusal detection + single re-nudge, thinking-tag stripping, live parameter tuning and success-rate statistics.",
   "type": "module",
   "files": [
     "mg-purge.middleware.js",
     "presets",
+    "page",
+    "panel",
     "README.md",
     "LICENSE"
   ],
@@ -18,6 +20,7 @@
     "prompt-injection",
     "system-prompt",
     "unrestricted",
+    "dashboard",
     "llm-gateway"
   ],
   "license": "MIT",
@@ -28,6 +31,22 @@
   "homepage": "https://github.com/hotker/mg-purge",
   "magpie": {
     "middleware": "./mg-purge.middleware.js",
+    "page": {
+      "title": "mg-purge",
+      "titles": { "zh": "破甲 mg-purge", "zh-TW": "破甲 mg-purge", "ja": "mg-purge", "de": "mg-purge" },
+      "file": "page/index.html",
+      "icon": "page/icon.svg",
+      "keepAlive": true
+    },
+    "panels": [
+      {
+        "slot": "usage",
+        "title": "mg-purge 成功率",
+        "titles": { "zh": "mg-purge 成功率", "zh-TW": "mg-purge 成功率", "ja": "mg-purge success", "de": "mg-purge Erfolg" },
+        "file": "panel/index.html"
+      }
+    ],
+    "permissions": ["usage:summary"],
     "options": {
       "preset": "unrestricted",
       "position": "append",
@@ -36,8 +55,11 @@
       "refusalRetry": true,
       "stripThink": true,
       "agents": [],
+      "excludeAgents": [],
       "models": [],
-      "excludeAgents": []
+      "systemPrompt": "",
+      "nudge": "",
+      "refusalPatterns": []
     }
   },
   "scripts": {

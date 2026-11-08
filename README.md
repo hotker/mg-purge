@@ -36,6 +36,17 @@ magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalRe
 
 装好后 magpie 网关（`127.0.0.1:3425`）上流过的每个 agent 请求都会带上注入。新会话生效。
 
+## 看板与统计
+
+mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panels`）：
+
+- **整页看板**（左侧栏「mg-purge」）：四张卡（调用 / 错误 / 成功率 / 成本）+ 按模型成功率表 + **全部参数的可视编辑**（预设、位置、override、boost、refusalRetry、stripThink、agents/excludeAgents/models、systemPrompt、nudge、refusalPatterns）。改完即写回插件 options，网关自动热加载，无需重启。
+- **Usage 面板**（Usage 页底部）：一行看今天成功率、调用数、错误数，带进度条。
+
+**成功率口径**：`成功率 = 成功调用 / 总调用`，错误含 `status ≥ 400` 与 `errType` 非空。数据来自 magpie 的 `usage:summary` 读（插件声明 `permissions: ["usage:summary"]`，只给总量与每模型汇总，不给 key/账号/会话）。
+
+**网关内计数**：middleware 另导出 `onUsage` / `stats` / `successRate`，在网关进程内累计调用/成功/错误/被拒及按 agent、按模型分布；看板画的是 `usage:summary` 实时汇总，两者口径一致。
+
 ## 选项
 
 ```json

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mg-purge</title>
+<link rel="stylesheet" href="style.css">
+<script src="_magpie/bridge.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<h1>破甲 · mg-purge <span class="ver" id="ver"></span></h1>
+<p class="muted" id="lede">dsh-purge 的提示词注入层，跑在 magpie 网关上。下面改的参数即时生效（网关约 2 秒内重新加载）。</p>
+
+<section class="cards" id="statcards">
+  <div class="card"><div class="k">调用</div><div class="v" id="stCalls">–</div></div>
+  <div class="card"><div class="k">错误</div><div class="v" id="stErrors">–</div></div>
+  <div class="card ok"><div class="k">成功率</div><div class="v" id="stRate">–</div></div>
+  <div class="card"><div class="k">成本</div><div class="v" id="stCost">–</div></div>
+</section>
+
+<div class="seg" id="periodSeg" role="tablist">
+  <button type="button" data-p="today" aria-selected="true">今天</button>
+  <button type="button" data-p="7d">7 天</button>
+  <button type="button" data-p="30d">30 天</button>
+</div>
+
+<h2>按模型成功率</h2>
+<table class="tbl"><thead><tr><th>模型</th><th class="num">调用</th><th class="num">错误</th><th class="num">成功率</th></tr></thead><tbody id="modelRows"><tr><td colspan="4" class="muted">…</td></tr></tbody></table>
+
+<h2>参数调整</h2>
+<div id="settings" class="settings"></div>
+
+<p class="muted foot">成功率 = 成功调用 / 总调用（错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总；参数写入本插件 options，网关自动热加载。读取权限：usage:summary。</p>
+</body>
+</html>

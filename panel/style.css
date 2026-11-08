@@ -1,0 +1,14 @@
+:root { color-scheme: light dark; }
+body { margin: 0; font: 13px/1.45 var(--magpie-font, system-ui); color: var(--magpie-fg, CanvasText); background: var(--magpie-bg, Canvas); }
+.panel { padding: 14px 16px; }
+.head { display: flex; align-items: center; gap: 8px; }
+.head .muted { font-size: 12px; }
+.spacer { flex: 1; }
+.rate { font-weight: 650; font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa0a6; }
+.dot.on { background: var(--magpie-accent, #4f46e5); box-shadow: 0 0 0 3px color-mix(in srgb, var(--magpie-accent, #4f46e5) 22%, transparent); }
+.bar { margin: 10px 0 6px; height: 8px; border-radius: 6px; background: var(--magpie-card, #0001); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--magpie-accent, #4f46e5); border-radius: 6px; transition: width .3s; }
+.bar i.low { background: #d97706; }
+.foot { font-size: 11.5px; }
+.muted { color: var(--magpie-muted, GrayText); }

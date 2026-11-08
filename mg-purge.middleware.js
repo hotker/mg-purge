@@ -395,3 +395,46 @@ export const events = [
   "content_block_delta",
   "response.output_text.delta",
 ]
+
+// ── statistics ──────────────────────────────────────────────────────────────
+//
+// onUsage gets each ledger row (no bodies, prompts or error text). It keeps a
+// running tally in module scope, for diagnostics magpie's Plugins page can't
+// show. A row with status >= 400 or errType set is a failed call; the dashboard
+// page reads the same picture live from usage:summary, so these counters are a
+// second, in-gateway view rather than the source the page draws from.
+export const stats = {
+  since: Date.now(),
+  calls: 0,
+  ok: 0,
+  errors: 0,
+  rejected: 0,
+  byAgent: {},
+  byModel: {},
+}
+
+export function onUsage(row) {
+  if (!row || typeof row !== "object") return
+  stats.calls++
+  const failed = (typeof row.status === "number" && row.status >= 400) || (row.errType && row.errType !== "")
+  if (failed) stats.errors++
+  else stats.ok++
+  if (row.rejected) stats.rejected++
+  const agent = row.agent || "?"
+  const model = row.served || row.requested || row.model || "?"
+  bump(stats.byAgent, agent, failed)
+  bump(stats.byModel, model, failed)
+}
+
+function bump(map, key, failed) {
+  const b = map[key] || (map[key] = { calls: 0, ok: 0, errors: 0 })
+  b.calls++
+  if (failed) b.errors++
+  else b.ok++
+}
+
+// successRate is ok / calls as a 0–1 ratio (1 when no calls yet).
+export function successRate() {
+  return stats.calls ? stats.ok / stats.calls : 1
+}
+
