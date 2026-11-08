@@ -41,7 +41,7 @@ test("onResponse strips even when the reply's model differs from the request", (
   const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["deepseek"] }, state: {} }
   m.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "x" }] }, ctx)
   assert.ok(ctx.state.purge, "request passed the model filter")
-  const body = { model: "group/jarivs", content: [{ type: "text", text: "<think>hm</think>Hello" }] }
+  const body = { model: "group/test", content: [{ type: "text", text: "<think>hm</think>Hello" }] }
   assert.equal(m.onResponse(body, ctx).content[0].text, "Hello")
 })
 
@@ -116,7 +116,7 @@ test("gemini streamed parts still get think stripped", () => {
 test("error replies are logged with status, models, injected flag", () => {
   const ctx = { protocol: "chat", model: "", agent: "codex", status: 502, options: { preset: "unrestricted", stripThink: false }, state: {} }
   m.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "SECRET PROMPT" }] }, ctx)
-  const body = { model: "group/jarivs", error: { type: "upstream_error" } }
+  const body = { model: "group/test", error: { type: "upstream_error" } }
   const logs = withLog(() => m.onResponse(body, ctx))
   const line = logs.find((l) => l.includes("[mg-purge] error 502"))
   assert.ok(line, "should log the 502")

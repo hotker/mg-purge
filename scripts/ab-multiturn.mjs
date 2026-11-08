@@ -2,7 +2,7 @@
 // ab-multiturn.mjs — a multi-turn A/B harness for mg-purge's boost question.
 //
 // The earlier single-turn test found boost gave zero extra "compliance" on
-// deepseek-flash and the workbuddy free pool, at +~458 prompt tokens a request.
+// a paid endpoint and a free-pool endpoint, at +~458 prompt tokens a request.
 // But boost targets *long contexts and multi-turn drift* — the very case a
 // 12-prompt, single-turn run cannot show. This script runs the same prompts
 // across three arms and three rounds, so boost gets the scenario it is meant for.
@@ -18,7 +18,7 @@
 // directly comparable. Runs are sequential and spaced, so a free pool's rate
 // limit shows up as a 429/502 row, not a silent skew.
 //
-//   node ab-multiturn.mjs --base http://127.0.0.1:3425 --model group/jarivs \
+//   node ab-multiturn.mjs --base http://127.0.0.1:3425 --model group/test \
 //        --arms base,preset,pboost --rounds 3 [--key magpie] [--gap 1500] \
 //        [--out ab.json]
 //
@@ -36,7 +36,7 @@ const arg = (name, dflt) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt
 }
 const BASE = arg("base", "http://127.0.0.1:3425")
-const MODEL = arg("model", "group/jarivs")
+const MODEL = arg("model", "group/test")
 const KEY = arg("key", "magpie")
 const GAP = Number(arg("gap", "1500"))
 const ROUNDS = Number(arg("rounds", "3"))
