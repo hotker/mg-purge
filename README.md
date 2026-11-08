@@ -79,7 +79,7 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 }
 ```
 
-- **`preset`** — `unrestricted`（默认）/ `redteam` / `minimal` / `off`。`off` 表示只做 think 剥离与拒绝检测，不注入任何系统提示词。内置文案见 [`presets/packs.json`](presets/packs.json)。
+- **`preset`** — `unrestricted`（默认）/ `redteam` / `coherence` / `minimal` / `off`。`coherence` 是**正常开发用的「连贯执行」包**：让 agent 把已授权、目标明确的任务一次做完、少反复确认、被拒先换路，不带无限制/红队那套 framing——适合日常写代码/运维。`off` 只做 think 剥离与拒绝检测。内置文案见 [`presets/packs.json`](presets/packs.json)。
 - **`position`** — `append`（默认，保住 agent 自己的 prompt cache）或 `prepend`。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。
 - **`boost`** — `false`（默认，见「实测记录」：单轮对 deepseek-flash/workbuddy 池零收益、纯涨 ~458 token）。设 `true` 追加 `<dsh_boost>` 尾部强化段；多轮场景是否值得用 `scripts/ab-multiturn.mjs` 复核。

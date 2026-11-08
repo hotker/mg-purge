@@ -549,5 +549,22 @@
         "Hello"
       ]
     ]
+  },
+  {
+    "name": "coherence preset injects a keep-going prompt",
+    "options": {
+      "preset": "coherence",
+      "boost": false
+    },
+    "request": {
+      "model": "m",
+      "messages": []
+    },
+    "expect_request_contains": {
+      "system": [
+        "正常开发模式",
+        "一次做完"
+      ]
+    }
   }
 ]

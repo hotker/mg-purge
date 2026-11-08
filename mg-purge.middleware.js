@@ -53,27 +53,32 @@ const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
 // and to a decline, so a short helpful reply that opens "作为一个 AI，我建议…"
 // does not read as one.
 export const REFUSAL_PATTERNS = [
-  /^I (?:can(?:'|’)?t|won(?:'|’)?t|am unable to|must decline)\b/i,
-  /^I(?:'|’)m sorry, (?:but )?I (?:can(?:'|’)?t|cannot|am unable)/i,
-  /^(?:cannot|can't) (?:help|assist|provide|comply) with (?:that|this|your)/i,
-  /^我(?:不能|无法)(?:协助|帮助|提供|满足|帮你|替你|给你)/,
-  /^抱歉，?我(?:不能|无法|帮不了|做不到)/,
+  // English declines that open the reply
+  /^I (?:can(?:'|’)?t|won(?:'|’)?t|am unable to|must decline)\b(?! help but)/i,
+  /^I(?:'|’)m sorry, (?:but )?I (?:can(?:'|’)?t|cannot|am unable|won(?:'|’)?t)/i,
+  /^(?:cannot|can't|won't|I cannot|I can't|I won't) (?:help|assist|provide|comply|give|do|share|write|reproduce|print)\b(?! (?:but|to notice))/i,
+  /^(?:No|Nope)\b.{0,40}?(?:I (?:can(?:'|’)?t|won(?:'|’)?t|cannot)|not (?:going to|able to)|refuse)/i,
+  /^(?:I(?:'|’)m not (?:going to|able to)|I refuse to)\b/i,
+  // Chinese declines that open the reply
+  /^我(?:不能|无法|不会|不)(?:协助|帮助|提供|满足|帮你|替你|给你|给出|打印|复述|参与)/,
+  /^抱歉[，,]?我(?:不能|无法|帮不了|做不到|不会)/,
   /^这超出了我的(?:能力|范围)/,
-  /^(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)[，,].{0,20}(?:不能|无法|不能协助|无法协助|建议你|建议您)/,
+  /^(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)[，,].{0,20}(?:不能|无法|不能协助|无法协助)/,
   /^这(?:一)?步我(?:不做|不参与|不帮)/,
-  /^我(?:不参与|不帮你|不会帮|不能参与|不方便参与)/,
 ]
 
 // A refusal is short and contentless: the operator gets a decline, not an
 // answer. So a match only counts when it opens the text (first 120 chars) AND
-// the whole reply is under 300 chars — a long answer that merely *says* "作为
-// AI" or "I'm sorry, but" while still delivering real content is not a refusal.
+// the whole reply is small — a long answer that merely *says* "作为 AI" or
+// "I'm sorry, but" while still delivering real content is not a refusal.
 const REFUSAL_HEAD = 120
 const REFUSAL_MAX = 300
 
-// An offer of real help after the decline ("but here's a script / I can give
-// you / 我可以给你") makes it an answer, not a contentless refusal.
-const OFFER = /(?:here(?:'|’)?s|I can (?:give|show|provide|help)|let me|(?:但|不过|我可以|这里|下面)).{0,16}(?:给|做|提供|脚本|方案|演示|建议|:)|我可以|下面|以下是|这里有一/i
+// An offer of real help after the decline makes it an answer, not a refusal.
+// Covers "but here's…/here is…/I can give/show/provide…/let me…" and Chinese
+// "…但/不过/我可以给你/以下是/这里…". Also catches a code fence or a numbered list,
+// which a genuine contentless refusal never carries.
+const OFFER = /(?:here(?:'|’)?s|here (?:is|are)|I (?:can|will|could) (?:give|show|provide|help|walk|write|share)|let me|below is|the (?:corrected|fixed|right) (?:one|version|query|code)|(?:但|不过|我可以|这里|下面|以下)|我可以(?:给你|帮你|提供|演示)|下面(?:是|给|演示)|以下(?:是|为)|\n\s*```|\n\s*\d+\.\s)/i
 
 function looksLikeRefusal(text, extra) {
   const raw = String(text || "").trim()
@@ -83,8 +88,8 @@ function looksLikeRefusal(text, extra) {
   const head = raw.slice(0, REFUSAL_HEAD)
   // a mention of injection/jailbreak is discussion, not a refusal
   if (/提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)) return false
-  // a decline wrapped around actual help is an answer
-  if (OFFER.test(head)) return false
+  // a decline wrapped around actual help (or a code block / numbered list) is an answer
+  if (OFFER.test(raw)) return false
   const pats = Array.isArray(extra) && extra.length ? [...REFUSAL_PATTERNS, ...compileUserPatterns(extra)] : REFUSAL_PATTERNS
   return pats.some((re) => {
     try { return re.test(head) } catch { return false }
@@ -284,30 +289,48 @@ function appliesTo(body, ctx, o) {
 
 // ── hooks ────────────────────────────────────────────────────────────────────
 
+// safeLog: never let logging throw into a request, and cap the rate so a storm
+// of malformed bodies can't flood magpie's log (at most ~60 lines a minute,
+// matching magpie's own middleware log budget).
+let _logWindow = 0, _logCount = 0
+function safeLog(line) {
+  try {
+    const now = Date.now()
+    if (now - _logWindow > 60000) { _logWindow = now; _logCount = 0 }
+    if (_logCount++ < 60) console.log(line)
+  } catch { /* ignore */ }
+}
+
 export function onRequest(body, ctx) {
-  const o = ctx.options || {}
+  const o = (ctx && ctx.options) || {}
   if (!body || typeof body !== "object") return
-  if (!appliesTo(body, ctx, o)) return
+  try {
+    if (!appliesTo(body, ctx, o)) return
 
-  const { prompt, nudge, refusalPatterns } = resolve(o)
-  const override = o.override !== false
-  const before = o.position === "prepend"
-  const out = prompt ? injectPrompt(body, prompt, override, before, ctx) : body
+    const { prompt, nudge, refusalPatterns } = resolve(o)
+    const override = o.override !== false
+    const before = o.position === "prepend"
+    const out = prompt ? injectPrompt(body, prompt, override, before, ctx) : body
 
-  // remember, for the stream hooks of this same request, whether a retry nudge
-  // is needed and whether to strip thinking
-  ctx.state.purge = {
-    refusalRetry: o.refusalRetry !== false,
-    stripThink: o.stripThink !== false,
-    nudge,
-    refusalPatterns,
-    nudged: false,
-    decided: false,
-    buffered: "",
-    strippers: {}, // per-stream-key tag stripper state, kept for the request
-    injected: !!prompt, // did this request carry the injection (for error logs)
+    // remember, for the stream hooks of this same request, whether a retry nudge
+    // is needed and whether to strip thinking
+    ctx.state.purge = {
+      refusalRetry: o.refusalRetry !== false,
+      stripThink: o.stripThink !== false,
+      nudge,
+      refusalPatterns,
+      nudged: false,
+      decided: false,
+      buffered: "",
+      strippers: {}, // per-stream-key tag stripper state, kept for the request
+      injected: !!prompt, // did this request carry the injection (for error logs)
+    }
+    return prompt ? out : undefined
+  } catch (err) {
+    // fail open: a bad body must never break the request — leave it as it came
+    safeLog(`[mg-purge] onRequest error, request left unchanged: ${err && err.message ? err.message : err}`)
+    return undefined
   }
-  return prompt ? out : undefined
 }
 
 // Refusal signals are watched in the opening text only. The gateway streams a
@@ -318,50 +341,52 @@ export function onRequest(body, ctx) {
 // history next turn. The strip runs on the same chunks, keeping each stream
 // key's carry in ctx.state so a block split across events is still removed.
 export function onEvent(ev, ctx) {
-  const st = ctx.state && ctx.state.purge
+  const st = ctx && ctx.state && ctx.state.purge
   if (!st) return
-  const texts = eventTexts(ev)
-  if (!texts.length) return
+  try {
+    const texts = eventTexts(ev)
+    if (!texts.length) return
 
-  // thinking strip on the same chunks
-  let changed = false
-  if (st.stripThink) {
-    for (const slot of texts) {
-      if (typeof slot.obj[slot.key] !== "string") continue
-      const sk = slot.streamKey
-      if (!st.strippers[sk]) st.strippers[sk] = newStripper()
-      const u = strip(st.strippers[sk], slot.obj[slot.key])
-      if (u !== slot.obj[slot.key]) {
-        slot.obj[slot.key] = u
-        changed = true
+    // thinking strip on the same chunks
+    let changed = false
+    if (st.stripThink) {
+      for (const slot of texts) {
+        if (typeof slot.obj[slot.key] !== "string") continue
+        const sk = slot.streamKey
+        if (!st.strippers[sk]) st.strippers[sk] = newStripper()
+        const u = strip(st.strippers[sk], slot.obj[slot.key])
+        if (u !== slot.obj[slot.key]) {
+          slot.obj[slot.key] = u
+          changed = true
+        }
       }
     }
-  }
 
-  // refusal watch: detect on the opening text only, count it, never edit the reply
-  if (st.refusalRetry && !st.decided) {
-    st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
-    // decide once we have enough opening text to judge, or a clear terminator
-    if (st.buffered.length >= 120 || /[。.!?！？\n]/.test(st.buffered)) {
-      st.decided = true
+    // refusal watch: detect on the opening text only, count it, never edit the reply.
+    // Test every chunk (cheap), and stop watching once a refusal matched, once the
+    // opening is long enough that no contentless refusal fits, or at a terminator —
+    // so a short refusal with no punctuation ("No, I won't") is caught on chunk 1.
+    if (st.refusalRetry && !st.decided) {
+      st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
-        st.nudged = true // reply is left exactly as the model sent it
-        // The durable signal: onEvent runs on a per-request pooled runtime,
-        // onUsage on the module's own runtime — two different module instances,
-        // so a module-scope counter set here is not the one the GUI or onUsage
-        // sees. A line in magpie's log is the one place it is actually readable.
-        try {
-          console.log(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
-        } catch { /* logging must never break a request */ }
+        st.nudged = true
+        st.decided = true
+        safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
+      } else if (st.buffered.length > REFUSAL_MAX || /[。！？\n]/.test(st.buffered)) {
+        // too long to be a contentless refusal, or the reply carried on: not one
+        st.decided = true
       }
     }
-  }
 
-  return changed ? ev : undefined
+    return changed ? ev : undefined
+  } catch (err) {
+    safeLog(`[mg-purge] onEvent error, event left unchanged: ${err && err.message ? err.message : err}`)
+    return undefined
+  }
 }
 
 export function onResponse(body, ctx) {
-  const o = ctx.options || {}
+  const o = (ctx && ctx.options) || {}
   if (!body || typeof body !== "object") return
 
   // 502 / error diagnostics: a non-2xx reply that reaches onResponse is logged
@@ -371,10 +396,10 @@ export function onResponse(body, ctx) {
   // provider rejecting a long prompt vs a content filter vs a real upstream
   // fault. Opt out with logErrors:false. Never logs a prompt or a key.
   if (typeof ctx.status === "number" && ctx.status >= 400 && o.logErrors !== false) {
-    const st = ctx.state.purge
     try {
+      const st = ctx.state && ctx.state.purge
       const errType = body && ((body.error && (body.error.type || body.error.code)) || body.type || "")
-      console.log(
+      safeLog(
         `[mg-purge] error ${ctx.status} protocol=${ctx.protocol || "?"} agent=${ctx.agent || "?"}` +
         ` reqModel=${ctx.model || "?"} replyModel=${(body && body.model) || "-"}` +
         ` injected=${st && st.injected ? "yes" : "no"} errType=${errType || "-"}`,
@@ -382,40 +407,45 @@ export function onResponse(body, ctx) {
     } catch { /* logging must never break a request */ }
   }
 
-  // onRequest only ever writes ctx.state.purge after appliesTo passed. So its
-  // presence is the truthful "this request passed the agent/model filter"
-  // signal — safer than re-running appliesTo on the reply's model field, which
-  // magpie rewrites to the request name (e.g. "group/…") and could drift to the
-  // real served model and silently stop stripping while the stream path keeps
-  // stripping. Filter once, at the request; the reply follows it.
-  if (!ctx.state || !ctx.state.purge) return
-  const wantStrip = o.stripThink !== false
-  if (!wantStrip) return
-  let changed = false
-  const fix = (obj, k) => {
-    if (obj && typeof obj[k] === "string") {
-      const u = stripWhole(obj[k])
-      if (u !== obj[k]) {
-        obj[k] = u
-        changed = true
+  try {
+    // onRequest only ever writes ctx.state.purge after appliesTo passed. So its
+    // presence is the truthful "this request passed the agent/model filter"
+    // signal — safer than re-running appliesTo on the reply's model field, which
+    // magpie rewrites to the request name (e.g. "group/…") and could drift to the
+    // real served model and silently stop stripping while the stream path keeps
+    // stripping. Filter once, at the request; the reply follows it.
+    if (!ctx.state || !ctx.state.purge) return
+    const wantStrip = o.stripThink !== false
+    if (!wantStrip) return
+    let changed = false
+    const fix = (obj, k) => {
+      if (obj && typeof obj[k] === "string") {
+        const u = stripWhole(obj[k])
+        if (u !== obj[k]) {
+          obj[k] = u
+          changed = true
+        }
       }
     }
-  }
-  if (Array.isArray(body.content)) for (const b of body.content) if (b && b.type === "text") fix(b, "text")
-  if (Array.isArray(body.choices)) for (const c of body.choices) fix(c && c.message, "content")
-  if (Array.isArray(body.output)) {
-    for (const it of body.output) {
-      if (it && it.type === "message" && Array.isArray(it.content)) {
-        for (const p of it.content) if (p && p.type === "output_text") fix(p, "text")
+    if (Array.isArray(body.content)) for (const b of body.content) if (b && b.type === "text") fix(b, "text")
+    if (Array.isArray(body.choices)) for (const c of body.choices) fix(c && c.message, "content")
+    if (Array.isArray(body.output)) {
+      for (const it of body.output) {
+        if (it && it.type === "message" && Array.isArray(it.content)) {
+          for (const p of it.content) if (p && p.type === "output_text") fix(p, "text")
+        }
       }
     }
-  }
-  if (Array.isArray(body.candidates)) {
-    for (const c of body.candidates) {
-      if (c && c.content && Array.isArray(c.content.parts)) for (const p of c.content.parts) fix(p, "text")
+    if (Array.isArray(body.candidates)) {
+      for (const c of body.candidates) {
+        if (c && c.content && Array.isArray(c.content.parts)) for (const p of c.content.parts) fix(p, "text")
+      }
     }
+    return changed ? body : undefined
+  } catch (err) {
+    safeLog(`[mg-purge] onResponse error, reply left unchanged: ${err && err.message ? err.message : err}`)
+    return undefined
   }
-  return changed ? body : undefined
 }
 
 // The streamed chunks that carry visible text, by protocol event shape.

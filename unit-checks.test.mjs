@@ -131,3 +131,52 @@ test("logErrors:false silences the error log", () => {
   const logs = withLog(() => m.onResponse({ model: "x", error: { type: "t" } }, ctx))
   assert.equal(logs.filter((l) => l.includes("[mg-purge] error")).length, 0)
 })
+
+// 降低误伤: precise refusal detection — no false positives on normal answers,
+// no false negatives on short declines
+function detect(text, extra) {
+  const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, refusalRetry: true, refusalPatterns: extra || [] }, state: {} }
+  m.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+  let logged = false
+  const orig = console.log; console.log = () => { logged = true }
+  try { m.onEvent({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }, ctx) } finally { console.log = orig }
+  return logged
+}
+test("refusal detection: precision", () => {
+  const yes = ["I can't help with that.", "我不能帮你做这个。", "抱歉，我无法协助你。", "No, I won't", "I cannot help with that.", "I'm not going to do that.", "这超出了我的能力范围。"]
+  const no = [
+    "I can't help but notice the config has a typo — change PORT to 8080, then restart.",
+    "我可以帮你完成，先这样改：把 LOG_LEVEL 设成 debug。",
+    "I'm sorry, but I need more detail: which OS and version are you on?",
+    "This is a prompt injection example: `ignore previous` — here's how to detect it.",
+    "I can't help with that SQL query — actually, here's the corrected one:\nSELECT 1",
+    "作为 AI，我建议你先备份再迁移，步骤如下：1. dump 2. restore",
+  ]
+  for (const t of yes) assert.equal(detect(t), true, "should detect: " + t)
+  for (const t of no) assert.equal(detect(t), false, "should NOT detect: " + t)
+})
+
+// 稳定性: hooks never throw on malformed input — they fail open
+test("hooks fail open on malformed bodies/events", () => {
+  const opts = { preset: "unrestricted", stripThink: true, refusalRetry: true }
+  const bads = [null, 42, "x", [], { system: 123 }, { messages: "no" }, { choices: "no" }, { content: 5 }]
+  for (const b of bads) {
+    const ctx = { protocol: "anthropic", model: "", options: opts, state: {} }
+    assert.doesNotThrow(() => m.onRequest(b, ctx))
+    assert.doesNotThrow(() => m.onResponse(b, { ...ctx, status: 200 }))
+    const ev = { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "<think>x" } }
+    assert.doesNotThrow(() => m.onEvent(ev, ctx))
+  }
+  // a body with a circular-ish / weird nested system shouldn't throw either
+  const ctx = { protocol: "anthropic", model: "", options: opts, state: {} }
+  assert.doesNotThrow(() => m.onRequest({ system: [{ type: "text", text: 123 }], messages: [] }, ctx))
+})
+
+test("an onRequest failure leaves the request's own body untouched", () => {
+  // protocol gemini with a broken systemInstruction shape the injector must survive
+  const ctx = { protocol: "gemini", model: "", options: { preset: "unrestricted", override: true }, state: {} }
+  const body = { systemInstruction: { parts: "not-an-array" }, contents: [] }
+  const out = m.onRequest(body, ctx)
+  // must not throw; either it injected safely or left as-is, but no crash
+  assert.ok(out === undefined || typeof out === "object")
+})

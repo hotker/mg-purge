@@ -67,6 +67,7 @@
   // The options schema is small and fixed; draw it by hand so labels are ours.
   const FIELDS = [
     { key: "preset", label: "预设", type: "enum", opts: [
+        ["coherence", "coherence 连贯执行（正常开发，少打断）"],
         ["unrestricted", "unrestricted 无限制"], ["redteam", "redteam 红队"],
         ["minimal", "minimal 极简"], ["off", "off 关（只剥离/检测）"]], hint: "选择注入的系统提示词包" },
     { key: "position", label: "注入位置", type: "enum", opts: [["append", "append 追加（保 cache）"], ["prepend", "prepend 前置"]], hint: "相对 agent 自己的系统提示词" },
