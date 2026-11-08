@@ -30,8 +30,8 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Check the middleware cases
-        run: node --test run-cases.mjs
+      - name: Check the middleware cases and regressions
+        run: node --test run-cases.mjs unit-checks.test.mjs
 
       - name: Pack
         id: pack

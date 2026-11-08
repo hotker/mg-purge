@@ -37,3 +37,54 @@ for (const c of cases) {
     if (c.response) assert.deepEqual(got.response, c.expect_response ?? c.response)
   })
 }
+
+// ── regressions also run here so `bun test` counts them (bun can't run the
+//    node:test file unit-checks.test.mjs; that file is what `node --test` uses) ──
+function withLog(fn) {
+  const lines = []
+  const orig = console.log
+  console.log = (...a) => lines.push(a.map(String).join(" "))
+  try { fn() } finally { console.log = orig }
+  return lines
+}
+function reqCtx(opts, agent) {
+  const c = { protocol: "anthropic", model: "", agent, options: { preset: "off", stripThink: false, refusalRetry: true, ...opts }, state: {} }
+  mod.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, c)
+  return c
+}
+
+test("excludeAgents: reply not stripped for an excluded agent", () => {
+  const ctx = { protocol: "anthropic", model: "", agent: "claude", options: { preset: "off", stripThink: true, excludeAgents: ["claude"] }, state: {} }
+  mod.onRequest({ model: "m", messages: [{ role: "user", content: "x" }] }, ctx)
+  const body = { content: [{ type: "text", text: "<think>hm</think>Hello" }] }
+  assert.equal(mod.onResponse(body, ctx), undefined)
+  assert.equal(body.content[0].text, "<think>hm</think>Hello")
+})
+
+test("onResponse strips when the reply's model differs from the request", () => {
+  const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["deepseek"] }, state: {} }
+  mod.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "x" }] }, ctx)
+  const body = { model: "group/jarivs", content: [{ type: "text", text: "<think>hm</think>Hello" }] }
+  assert.equal(mod.onResponse(body, ctx).content[0].text, "Hello")
+})
+
+test("Chinese refusal 「我不能帮你做这个。」 is detected", () => {
+  const c = reqCtx({}, undefined)
+  const logs = withLog(() => mod.onEvent({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "我不能帮你做这个。" } }, c))
+  assert.ok(logs.some((l) => l.includes("refusal opening detected")))
+})
+
+test("gemini streamed parts get think stripped", () => {
+  const ctx = { protocol: "gemini", model: "", options: { preset: "off", stripThink: true, refusalRetry: false }, state: {} }
+  mod.onRequest({ model: "m", contents: [{ role: "user", parts: [{ text: "x" }] }] }, ctx)
+  let text = ""
+  for (const chunk of ["<thi", "nk>hm</think>\nHello"]) {
+    const ev = { candidates: [{ index: 0, content: { parts: [{ text: chunk }] } }] }
+    text += (mod.onEvent(ev, ctx) || ev).candidates[0].content.parts[0].text
+  }
+  assert.equal(text, "Hello")
+})
+
+test("the module exports no events whitelist", () => {
+  assert.equal(mod.events, undefined)
+})

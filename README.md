@@ -14,7 +14,7 @@ dsh-purge 里天然属于网关层的，只有**提示词注入这一层**。mg-
 | --- | --- | --- |
 | 预设人设 + `excludePresets` | `preset` + `agents`/`excludeAgents`/`models` | 只对指定 agent/模型注入，其余隔离 |
 | `boost`（尾部强化段） | `boost` | `<dsh_boost>` 段追加到最后，抗长上下文与多轮漂移 |
-| `refusal-retry`（拒绝检测） | `refusalRetry` | 网关不能重跑模型、也不能改已经流给用户的正文，所以只做**检测 + 计数**（`stats.nudged`），不向回复拼接任何话术 |
+| `refusal-retry`（拒绝检测） | `refusalRetry` | 网关不能重跑模型、也不能改已经流给用户的正文，所以只做**检测 + 打日志**（`[mg-purge] refusal opening detected …`），不向回复拼接任何话术 |
 | 干净回复（去 think 块） | `stripThink` | 去掉开头 `<think>…</think>`，不留在历史里 |
 | 审批/沙箱/agent 循环补丁 | — | **改宿主，非网关层，magpie middleware 做不到** |
 
@@ -82,7 +82,7 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 - **`position`** — `append`（默认，保住 agent 自己的 prompt cache）或 `prepend`。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。
 - **`boost`** — `true`（默认）追加 `<dsh_boost>` 尾部强化段。
-- **`refusalRetry`** — `true`（默认）时检测回复开头是否是「短、无实质内容」的推脱，**只检测并计入 `stats.nudged`，不修改回复正文**（网关不能重跑模型，拼接话术会漏进用户可见正文并污染下一轮历史）。判定很严：命中须在开头 120 字内、整段 < 300 字、且无「我可以给你 / here's / 下面」这类实际给出的内容，避免误伤正常回答。
+- **`refusalRetry`** — `true`（默认）时检测回复开头是否是「短、无实质内容」的推脱，**只检测并写一行日志 `[mg-purge] refusal opening detected`，不修改回复正文**（网关不能重跑模型，拼接话术会漏进用户可见正文并污染下一轮历史）。判定很严：命中须在开头 120 字内、整段 < 300 字、且无「我可以给你 / here's / 下面」这类实际给出的内容，避免误伤正常回答。
 - **`stripThink`** — `true`（默认）时去掉回复开头的 `<think>`/`<thinking>`/`<thought>` 块（流式与整包都处理）。**受 `agents`/`excludeAgents`/`models` 同样约束**：被排除的 agent 其回复原样不动。
 - **`agents` / `excludeAgents`** — 只注入这些 agent / 排除这些 agent（`ctx.agent`）。
 - **`models`** — 只注入模型名前缀匹配的请求。
@@ -124,12 +124,13 @@ think 剥离与拒绝检测覆盖 Anthropic / Chat / Responses / Gemini 的**流
 ## 验证
 
 ```sh
-node --test run-cases.mjs          # 纯 Node，无需 Bun
-# 或用 magpie-community 的 harness：
-# bun test mg-purge.test.mjs
+node --test run-cases.mjs unit-checks.test.mjs   # 纯 Node，无需 Bun（CI 与本地都用这个）
+bun test mg-purge.test.mjs                        # 装了 Bun 时代替上面
 ```
 
-21 条 `cases.json` + `unit-checks.mjs` 覆盖四个 API 的注入、override、位置、按 agent/模型过滤（含 onResponse 也遵守排除）、boost、think 剥离（**Chat 无 type 的流式跨块**）、拒绝检测的精确度（5 条正常回答不误判）与「检测但不改正文」。
+**23 条 `cases.json` + 10 条 `unit-checks.test.mjs`**（CI 同时跑两个文件）覆盖：四个 API 的注入、override、位置、按 agent/模型过滤、boost、think 剥离（**Chat 无 type 的流式跨块** + **Gemini `candidates[].parts`**）、拒绝检测精确度（5 条正常回答不误判；中文「我不能帮你做这个」命中）、「检测但不改正文」、`onResponse` 以 `ctx.state.purge` 为门（不受回包 model 被改写影响，且被排除 agent 原样不动）。`mg-purge.test.mjs` 是独立的 `bun test` 入口，自带同样的关键回归，不再依赖 magpie-community 的 `scripts/middleware.mjs`。
+
+拒绝检测的**真信号在 magpie 日志**里：命中时输出 `[mg-purge] refusal opening detected (agent=… model=…)`。（`onEvent` 与 `onUsage` 跑在网关里两个不同的模块实例上，模块级计数器跨实例读不到，也不进 GUI——所以用日志而不是计数器。）
 
 ## 许可
 

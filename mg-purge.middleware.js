@@ -16,16 +16,21 @@
 //                  preset persona + `excludePresets`).
 //   2. boost     — append the <dsh_boost> tail block last, so it survives long
 //                  contexts and multi-turn drift (dsh-purge `boost.js`).
-//   3. refusal   — detect a refusal in the start of the reply, drop it, and
-//                  re-run once with a strengthened nudge (dsh-purge
-//                  `refusal-retry.js`, default off there, on here).
-//      + refusalPatterns / refusalNudge let an operator add their own.
+//   3. refusal   — DETECT a short, contentless refusal at the opening of the
+//                  reply and log it. The gateway cannot re-run the model and
+//                  must not edit a reply already streaming to the operator, so
+//                  there is no retry and no nudge spliced in (dsh-purge's
+//                  `refusal-retry.js` re-runs on the DSH host; here that layer
+//                  has no gateway equivalent). + refusalPatterns lets an
+//                  operator extend the detector.
 //   4. think     — strip a leading <think>…</think> block so the agent doesn't
 //                  carry it in history (dsh-purge's clean-reply behavior),
 //                  ported from magpie-community's middleware-think-tags.
 //
-// The middleware shows its own `hooks` here; the gateway calls them per its
-// contract (250ms onRequest/onResponse, 50ms per event, fail open).
+// The middleware does not export `events`, so the gateway hands every streamed
+// event to onEvent (chat's SSE chunks carry no `type`, which a whitelist would
+// drop). The gateway calls the hooks per its contract (250ms onRequest/onResponse,
+// 50ms per event, fail open).
 //
 // Config lives in the plugin's `options` in magpie's plugins.json:
 //
@@ -51,8 +56,8 @@ export const REFUSAL_PATTERNS = [
   /^I (?:can(?:'|’)?t|won(?:'|’)?t|am unable to|must decline)\b/i,
   /^I(?:'|’)m sorry, (?:but )?I (?:can(?:'|’)?t|cannot|am unable)/i,
   /^(?:cannot|can't) (?:help|assist|provide|comply) with (?:that|this|your)/i,
-  /^我(?:不能|无法)(?:协助|帮助|提供|满足)/,
-  /^抱歉，?我(?:不能|无法)/,
+  /^我(?:不能|无法)(?:协助|帮助|提供|满足|帮你|替你|给你)/,
+  /^抱歉，?我(?:不能|无法|帮不了|做不到)/,
   /^这超出了我的(?:能力|范围)/,
   /^(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)[，,].{0,20}(?:不能|无法|不能协助|无法协助|建议你|建议您)/,
   /^这(?:一)?步我(?:不做|不参与|不帮)/,
@@ -306,12 +311,11 @@ export function onRequest(body, ctx) {
 
 // Refusal signals are watched in the opening text only. The gateway streams a
 // reply and cannot re-run the model, so this hook never rewrites what the
-// operator sees: a matched opening is counted (stats.nudged) and left exactly as
-// the model sent it. The nudge talks to the model on a *future* request — it is
-// not spliced into a reply, which would leak English instructions into the
-// user's visible text and then back into history next turn. The strip runs on
-// the same chunks, keeping each stream key's carry in ctx.state so a block split
-// across events is still removed.
+// operator sees: a matched opening is logged to magpie's log and the reply is
+// left exactly as the model sent it. Nothing is spliced in — an nudge in the
+// reply would leak instructions into the user's visible text and then back into
+// history next turn. The strip runs on the same chunks, keeping each stream
+// key's carry in ctx.state so a block split across events is still removed.
 export function onEvent(ev, ctx) {
   const st = ctx.state && ctx.state.purge
   if (!st) return
@@ -340,8 +344,14 @@ export function onEvent(ev, ctx) {
     if (st.buffered.length >= 120 || /[。.!?！？\n]/.test(st.buffered)) {
       st.decided = true
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
-        st.nudged = true // recorded in stats; the reply is left as the model sent it
-        stats.nudged++
+        st.nudged = true // reply is left exactly as the model sent it
+        // The durable signal: onEvent runs on a per-request pooled runtime,
+        // onUsage on the module's own runtime — two different module instances,
+        // so a module-scope counter set here is not the one the GUI or onUsage
+        // sees. A line in magpie's log is the one place it is actually readable.
+        try {
+          console.log("[mg-purge] refusal opening detected (agent=%s model=%s)", ctx.agent || "?", ctx.model || "?")
+        } catch { /* logging must never break a request */ }
       }
     }
   }
@@ -352,9 +362,13 @@ export function onEvent(ev, ctx) {
 export function onResponse(body, ctx) {
   const o = ctx.options || {}
   if (!body || typeof body !== "object") return
-  // the same agent/model gate onRequest applies: an excluded agent's reply is
-  // left whole, not stripped behind its back
-  if (!appliesTo(body, ctx, o)) return
+  // onRequest only ever writes ctx.state.purge after appliesTo passed. So its
+  // presence is the truthful "this request passed the agent/model filter"
+  // signal — safer than re-running appliesTo on the reply's model field, which
+  // magpie rewrites to the request name (e.g. "group/…") and could drift to the
+  // real served model and silently stop stripping while the stream path keeps
+  // stripping. Filter once, at the request; the reply follows it.
+  if (!ctx.state || !ctx.state.purge) return
   const wantStrip = o.stripThink !== false
   if (!wantStrip) return
   let changed = false
@@ -415,7 +429,6 @@ export const stats = {
   ok: 0,
   errors: 0,
   rejected: 0,
-  nudged: 0, // replies whose opening read as a refusal (detected, never edited)
   byAgent: {},
   byModel: {},
 }
