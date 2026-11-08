@@ -12,3 +12,5 @@ body { margin: 0; font: 13px/1.45 var(--magpie-font, system-ui); color: var(--ma
 .bar i.low { background: #d97706; }
 .foot { font-size: 11.5px; }
 .muted { color: var(--magpie-muted, GrayText); }
+.link { font: inherit; color: var(--magpie-accent, #4f46e5); background: none; border: 0; padding: 0; cursor: pointer; }
+.link:disabled { opacity: .5; }

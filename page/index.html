@@ -12,6 +12,11 @@
 <h1>破甲 · mg-purge <span class="ver" id="ver"></span></h1>
 <p class="muted" id="lede">dsh-purge 的提示词注入层，跑在 magpie 网关上。下面改的参数即时生效（网关约 2 秒内重新加载）。</p>
 
+<div class="toolbar">
+  <button type="button" id="exportBtn" class="tb">导出诊断</button>
+  <span class="muted tbnote">下载本插件配置 + 全局用量快照（JSON，不联网、不含 prompt/密钥）。逐次请求日志在 magpie 服务日志里，不在此。</span>
+</div>
+
 <section class="cards" id="statcards">
   <div class="card"><div class="k">调用</div><div class="v" id="stCalls">–</div></div>
   <div class="card"><div class="k">错误</div><div class="v" id="stErrors">–</div></div>

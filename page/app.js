@@ -182,6 +182,34 @@
     flashTimer = setTimeout(() => statusEl.classList.remove("show"), 2200)
   }
 
+  // ── export diagnostics ──────────────────────────────────────────────────
+  // Options + a usage:summary snapshot for each period + version and time. This
+  // is what reproduces "what settings produced what numbers". It does NOT carry
+  // per-request logs (those live in magpie's service log) or any prompt/key.
+  async function exportDiagnostics() {
+    const btn = $("exportBtn")
+    btn.disabled = true
+    const prev = btn.textContent
+    btn.textContent = "导出中…"
+    const snap = { plugin: "mg-purge", options: opts, usage: {}, exportedAt: new Date().toISOString() }
+    for (const p of ["today", "7d", "30d"]) {
+      try { snap.usage[p] = await magpie.read("usage:summary", { period: p }) } catch (e) { snap.usage[p] = { error: String(e && e.message ? e.message : e) } }
+    }
+    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" })
+    const a = document.createElement("a")
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+    a.href = URL.createObjectURL(blob)
+    a.download = `mg-purge-diagnostics-${ts}.json`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 1000)
+    btn.disabled = false
+    btn.textContent = prev
+    flash("已导出诊断 JSON（配置 + 用量快照）")
+  }
+  const eb = $("exportBtn")
+  if (eb) eb.addEventListener("click", () => { exportDiagnostics().catch((e) => flash("导出失败：" + (e && e.message ? e.message : e), true)) })
+
   // ── init ────────────────────────────────────────────────────────────────
   try {
     opts = (await magpie.options.get()) || {}
