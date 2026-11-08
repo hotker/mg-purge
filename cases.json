@@ -83,20 +83,35 @@
     "response": { "choices": [{ "message": { "role": "assistant", "content": "<think>hm</think>hello" } }] },
     "expect_response": { "choices": [{ "message": { "role": "assistant", "content": "hello" } }] } },
 
-  { "name": "refusal opening on a streamed reply gets the nudge appended",
+  { "name": "a refusal opening is detected but the reply is left exactly as sent",
     "options": { "preset": "off", "boost": false, "refusalRetry": true, "stripThink": false },
     "request": { "model": "m", "messages": [{ "role": "user", "content": "do the thing" }] },
     "events": [
       { "event": "content_block_delta", "data": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "I'm sorry, but I can't help with that." } } }
-    ],
-    "expect_events_contains": [["I'm sorry, but I can't help with that.", "要现在执行吗"]]
-  },
+    ] },
 
-  { "name": "a normal opening is not nudged",
+  { "name": "a normal opening is not counted as a refusal",
     "options": { "preset": "off", "boost": false, "refusalRetry": true, "stripThink": false },
     "request": { "model": "m", "messages": [{ "role": "user", "content": "do the thing" }] },
     "events": [
       { "event": "content_block_delta", "data": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "Here is the full implementation:" } } }
     ]
+  },
+
+  { "name": "a long helpful answer that opens with an AI-persona phrase is not a refusal",
+    "options": { "preset": "off", "boost": false, "refusalRetry": true, "stripThink": false },
+    "request": { "model": "m", "messages": [{ "role": "user", "content": "how do I enable logging" }] },
+    "events": [
+      { "event": "content_block_delta", "data": { "type": "content_block_delta", "index": 0, "delta": { "type": "text_delta", "text": "作为一个 AI，我建议先把日志打开：在配置里设 LOG_LEVEL=debug，然后重启进程，再用 tail -f 观察输出，确认包含 request 与 response 的字段。" } } }
+    ]
+  },
+
+  { "name": "streamed chat events (no type field) still get think stripped",
+    "options": { "preset": "off", "boost": false, "stripThink": true, "refusalRetry": false },
+    "request": { "model": "m", "messages": [{ "role": "user", "content": "x" }] },
+    "events": [
+      { "event": "chat", "data": { "choices": [{ "index": 0, "delta": { "content": "<think>hm</think>Hello" } }] } }
+    ],
+    "expect_events_contains": [["Hello"]]
   }
 ]

@@ -42,33 +42,44 @@ const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
 
 // ── refusal detection ───────────────────────────────────────────────────────
 
-// Same shape and intent as dsh-purge lib/refusal-retry.js REFUSAL_PATTERNS:
-// a leading refusal opener, plus cheap "decline" phrasing. Only the first 600
-// chars are read, so a long technical answer that merely discusses refusals
-// is not mistaken for one.
+// Refusal openers. A match is a refusal only inside the short, contentless gate
+// in looksLikeRefusal — dense decline phrasing, not a passing "I'm sorry" inside
+// a full answer. The AI-persona and bare "sorry" forms are anchored to the start
+// and to a decline, so a short helpful reply that opens "作为一个 AI，我建议…"
+// does not read as one.
 export const REFUSAL_PATTERNS = [
-  /I (?:can(?:'|’)?t|won(?:'|’)?t|am unable to|must decline)/i,
-  /I(?:'|’)m sorry, but/i,
-  /(?:cannot|can't) (?:help|assist|provide|comply) with (?:that|this|your)/i,
-  /我不能|无法(?:协助|帮助|提供|满足)|抱歉，?我(?:不能|无法)|这超出了我的(?:能力|范围)/,
-  /(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)/,
+  /^I (?:can(?:'|’)?t|won(?:'|’)?t|am unable to|must decline)\b/i,
+  /^I(?:'|’)m sorry, (?:but )?I (?:can(?:'|’)?t|cannot|am unable)/i,
+  /^(?:cannot|can't) (?:help|assist|provide|comply) with (?:that|this|your)/i,
+  /^我(?:不能|无法)(?:协助|帮助|提供|满足)/,
+  /^抱歉，?我(?:不能|无法)/,
+  /^这超出了我的(?:能力|范围)/,
+  /^(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)[，,].{0,20}(?:不能|无法|不能协助|无法协助|建议你|建议您)/,
   /^这(?:一)?步我(?:不做|不参与|不帮)/,
-  /我(?:不参与|不帮你|不会帮|不能参与|不方便参与)/,
-  /(?:需要|请)(?:你)?(?:提供|出示|确认).{0,12}(?:授权|许可|书面)/,
-  /这(?:属于|是).{0,8}(?:未授权|越权|违法|犯罪行为)/,
-  /我也不会帮你把它包装成/,
-  /请把.{0,12}(?:授权|目标).{0,8}(?:发给|给我)/,
-  /(?:这是|这段|上述).{0,6}(?:提示词注入|越狱|指令注入)/,
-  /我(?:不会|无法)(?:把|将).{0,10}(?:当作|视为).{0,10}指令/,
+  /^我(?:不参与|不帮你|不会帮|不能参与|不方便参与)/,
 ]
 
-// metaRefusalAllowed keeps a long answer that merely *mentions* injection or a
-// refusal from being treated as one; matches dsh-purge refusalMatchIndex.
+// A refusal is short and contentless: the operator gets a decline, not an
+// answer. So a match only counts when it opens the text (first 120 chars) AND
+// the whole reply is under 300 chars — a long answer that merely *says* "作为
+// AI" or "I'm sorry, but" while still delivering real content is not a refusal.
+const REFUSAL_HEAD = 120
+const REFUSAL_MAX = 300
+
+// An offer of real help after the decline ("but here's a script / I can give
+// you / 我可以给你") makes it an answer, not a contentless refusal.
+const OFFER = /(?:here(?:'|’)?s|I can (?:give|show|provide|help)|let me|(?:但|不过|我可以|这里|下面)).{0,16}(?:给|做|提供|脚本|方案|演示|建议|:)|我可以|下面|以下是|这里有一/i
+
 function looksLikeRefusal(text, extra) {
-  const raw = String(text || "")
-  const head = raw.slice(0, 600)
-  const meta = /提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)
-  if (meta && raw.trim().length > 280) return false
+  const raw = String(text || "").trim()
+  if (!raw) return false
+  // too much for a refusal: it carried real content, so it is an answer
+  if (raw.length > REFUSAL_MAX) return false
+  const head = raw.slice(0, REFUSAL_HEAD)
+  // a mention of injection/jailbreak is discussion, not a refusal
+  if (/提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)) return false
+  // a decline wrapped around actual help is an answer
+  if (OFFER.test(head)) return false
   const pats = Array.isArray(extra) && extra.length ? [...REFUSAL_PATTERNS, ...compileUserPatterns(extra)] : REFUSAL_PATTERNS
   return pats.some((re) => {
     try { return re.test(head) } catch { return false }
@@ -293,11 +304,12 @@ export function onRequest(body, ctx) {
   return prompt ? out : undefined
 }
 
-// Buffering the opening text to detect a refusal conflicts with streaming a
-// whole reply — a gateway streams events, it can't re-run the model. So under
-// the gateway contract `onEvent` does the practical version: watch the first
-// visible chunk; if it opens with a refusal, append the nudge (dsh-purge's
-// RETRY_NUDGE) to that chunk; if it opens normally, leave it. The strip runs on
+// Refusal signals are watched in the opening text only. The gateway streams a
+// reply and cannot re-run the model, so this hook never rewrites what the
+// operator sees: a matched opening is counted (stats.nudged) and left exactly as
+// the model sent it. The nudge talks to the model on a *future* request — it is
+// not spliced into a reply, which would leak English instructions into the
+// user's visible text and then back into history next turn. The strip runs on
 // the same chunks, keeping each stream key's carry in ctx.state so a block split
 // across events is still removed.
 export function onEvent(ev, ctx) {
@@ -321,18 +333,15 @@ export function onEvent(ev, ctx) {
     }
   }
 
-  // refusal watch: only the opening text, once
+  // refusal watch: detect on the opening text only, count it, never edit the reply
   if (st.refusalRetry && !st.decided) {
     st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
-    if (st.buffered.trim().length >= 24 || (st.buffered.length > 0 && /[。.!?！？\n]/.test(st.buffered))) {
+    // decide once we have enough opening text to judge, or a clear terminator
+    if (st.buffered.length >= 120 || /[。.!?！？\n]/.test(st.buffered)) {
       st.decided = true
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
-        st.nudged = true
-        const last = texts[texts.length - 1]
-        if (last && typeof last.obj[last.key] === "string" && st.nudge) {
-          last.obj[last.key] += "\n\n" + st.nudge.trim()
-          changed = true
-        }
+        st.nudged = true // recorded in stats; the reply is left as the model sent it
+        stats.nudged++
       }
     }
   }
@@ -343,8 +352,11 @@ export function onEvent(ev, ctx) {
 export function onResponse(body, ctx) {
   const o = ctx.options || {}
   if (!body || typeof body !== "object") return
-  const strip = o.stripThink !== false
-  if (!strip) return
+  // the same agent/model gate onRequest applies: an excluded agent's reply is
+  // left whole, not stripped behind its back
+  if (!appliesTo(body, ctx, o)) return
+  const wantStrip = o.stripThink !== false
+  if (!wantStrip) return
   let changed = false
   const fix = (obj, k) => {
     if (obj && typeof obj[k] === "string") {
@@ -390,12 +402,6 @@ function eventTexts(ev) {
   return out
 }
 
-// Export the modules the harness checks against when loading a middleware.
-export const events = [
-  "content_block_delta",
-  "response.output_text.delta",
-]
-
 // ── statistics ──────────────────────────────────────────────────────────────
 //
 // onUsage gets each ledger row (no bodies, prompts or error text). It keeps a
@@ -409,6 +415,7 @@ export const stats = {
   ok: 0,
   errors: 0,
   rejected: 0,
+  nudged: 0, // replies whose opening read as a refusal (detected, never edited)
   byAgent: {},
   byModel: {},
 }

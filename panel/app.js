@@ -29,7 +29,7 @@
   const fill = $("barFill")
   fill.style.width = (rate * 100).toFixed(1) + "%"
   fill.classList.toggle("low", rate < 0.9)
-  $("foot").textContent = `今天 · 成功 ${ok.toLocaleString()} / 错误 ${errors.toLocaleString()} · 调用成功率 = 成功 / 总调用`
+  $("foot").textContent = `全网关（usage 汇总）· 成功 ${ok.toLocaleString()} / 错误 ${errors.toLocaleString()} · 调用成功率 = 成功 / 总调用`
 
   if (magpie.onTheme) {
     magpie.onTheme(() => {})

@@ -31,6 +31,6 @@
 <h2>参数调整</h2>
 <div id="settings" class="settings"></div>
 
-<p class="muted foot">调用成功率 = 成功调用 / 总调用（错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
+<p class="muted foot">全网关调用成功率 = 成功调用 / 总调用（数据为 usage 全局汇总；错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
 </body>
 </html>
