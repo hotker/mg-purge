@@ -1,6 +1,6 @@
 {
   "name": "mg-purge",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware, with a dashboard page and a Usage panel — operator-priority system prompt, boost tail block, refusal detection + single re-nudge, thinking-tag stripping, live parameter tuning and success-rate statistics.",
   "type": "module",
   "files": [

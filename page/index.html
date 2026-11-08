@@ -37,5 +37,18 @@
 <div id="settings" class="settings"></div>
 
 <p class="muted foot">全网关调用成功率 = 成功调用 / 总调用（数据为 usage 全局汇总；错误含 status ≥ 400 与 errType 非空）。数据来自 magpie 的 usage 汇总，真实粒度为<b>总量</b>与<b>按模型</b>；<b>按 agent</b>维度需常驻 host 服务，本插件不引入。参数写入本插件 options，网关约 2 秒热加载。读取权限：usage:summary。</p>
+
+<div id="exportBox" class="exportbox" hidden>
+  <div class="ebhead">
+    <strong>诊断 JSON</strong>
+    <span class="muted" id="ebnote">已复制到剪贴板；若没复制成功，点「全选」后手动复制。</span>
+    <span class="spacer"></span>
+    <button type="button" id="ebSelect" class="tb">全选</button>
+    <button type="button" id="ebCopy" class="tb">复制</button>
+    <button type="button" id="ebDownload" class="tb">尝试下载</button>
+    <button type="button" id="ebClose" class="tb">关闭</button>
+  </div>
+  <textarea id="ebText" readonly spellcheck="false"></textarea>
+</div>
 </body>
 </html>
