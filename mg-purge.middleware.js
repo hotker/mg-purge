@@ -47,6 +47,7 @@
 // still accepted but unused — the refusal path only detects and logs, it never
 // splices text into the reply.)
 
+import fs from "node:fs"
 import PACKS_NS from "./presets/packs.mjs"
 const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
 
@@ -297,9 +298,19 @@ function appliesTo(body, ctx, o) {
 // of malformed bodies can't flood magpie's log (at most ~60 lines a minute,
 // matching magpie's own middleware log budget).
 let _logWindow = 0, _logCount = 0
-// magpie re-instantiates this module per request, so a module-level flag would
-// warn on every request. Keep the once-per-runtime flag on globalThis instead.
-const _G = typeof globalThis !== "undefined" ? globalThis : {}
+// magpie runs each middleware call in its own isolate, so neither a module-level
+// flag nor globalThis survives to the next request — both warned on EVERY call.
+// A marker file is the only thing that persists across isolates.
+const DEPRECATION_MARKER = process.env.MG_PURGE_DEPRECATION_MARKER || "/tmp/.mg-purge-retry-deprecated"
+function warnDeprecatedOnce(line) {
+  try {
+    if (fs.existsSync(DEPRECATION_MARKER)) return
+    fs.writeFileSync(DEPRECATION_MARKER, String(Date.now()))
+  } catch {
+    /* no fs? fall through and log anyway — a duplicate line is better than a silent rename */
+  }
+  safeLog(line)
+}
 function safeLog(line) {
   try {
     const now = Date.now()
@@ -323,9 +334,8 @@ export function onRequest(body, ctx) {
     // `refusalDetect` is the honest name: this hook cannot re-run the model, so
     // it only detects and logs. `refusalRetry` is a deprecated alias that maps
     // to the same switch (either key set to false disables detection).
-    if (Object.prototype.hasOwnProperty.call(o, "refusalRetry") && !_G.__mgPurgeWarnedRetry) {
-      _G.__mgPurgeWarnedRetry = true
-      safeLog(
+    if (Object.prototype.hasOwnProperty.call(o, "refusalRetry")) {
+      warnDeprecatedOnce(
         "[mg-purge] option `refusalRetry` is deprecated: a gateway middleware cannot re-run the model," +
           " so this plugin only DETECTS and logs a refusal. Use `refusalDetect`; `refusalRetry` is still" +
           " accepted as an alias for the same switch.",
