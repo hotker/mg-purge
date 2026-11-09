@@ -231,3 +231,28 @@ test("the deprecated refusalRetry key still works and stays silent", async () =>
   assert.ok(logs.some((l) => l.includes("refusal opening detected")), "and still detects")
   assert.equal(logs.filter((l) => l.includes("deprecated")).length, 0, "but never warns")
 })
+
+// The streaming path catches refusals in onEvent; a non-streamed reply only
+// ever reaches onResponse, so the detector has to run there too.
+function wholeReply(text, opts) {
+  const ctx = { protocol: "chat", model: "", agent: "x", status: 200, options: { preset: "off", stripThink: false, refusalDetect: true, ...opts }, state: {} }
+  m.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+  const body = { choices: [{ index: 0, message: { role: "assistant", content: text } }] }
+  return withLog(() => m.onResponse(body, ctx))
+}
+test("refusal detection also covers whole (non-streamed) replies", () => {
+  const logs = wholeReply("我不能帮你做这个。")
+  assert.ok(logs.some((l) => l.includes("refusal opening detected") && l.includes("mode=whole")))
+})
+test("whole replies: a leading think block does not hide the refusal", () => {
+  const logs = wholeReply("<think>user wants X</think>\n抱歉，我无法提供这个。")
+  assert.ok(logs.some((l) => l.includes("mode=whole")), "detect on the visible text, not the think block")
+})
+test("whole replies: a real answer is not flagged", () => {
+  const logs = wholeReply("可以，把 PORT 改成 8080 然后重启就行。")
+  assert.equal(logs.filter((l) => l.includes("refusal opening detected")).length, 0)
+})
+test("whole replies: refusalDetect off stays silent", () => {
+  const logs = wholeReply("我不能帮你做这个。", { refusalDetect: false })
+  assert.equal(logs.filter((l) => l.includes("refusal opening detected")).length, 0)
+})

@@ -423,6 +423,23 @@ export function onResponse(body, ctx) {
     // real served model and silently stop stripping while the stream path keeps
     // stripping. Filter once, at the request; the reply follows it.
     if (!ctx.state || !ctx.state.purge) return
+    const st = ctx.state.purge
+
+    // Whole-reply refusal detection. The streaming path watches chunks in
+    // onEvent; a non-streamed reply only ever reaches onResponse, so without
+    // this the detector silently missed every whole-reply request — while the
+    // README promised both paths. Detect on the visible text (a leading think
+    // block stripped) so the opening check sees what the operator sees.
+    if (st.refusalDetect && !st.decided && !(typeof ctx.status === "number" && ctx.status >= 400)) {
+      try {
+        const visible = stripWhole(replyText(body))
+        st.decided = true
+        if (looksLikeRefusal(visible, st.refusalPatterns)) {
+          safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"} mode=whole)`)
+        }
+      } catch { /* detection must never break a reply */ }
+    }
+
     const wantStrip = o.stripThink !== false
     if (!wantStrip) return
     let changed = false
@@ -454,6 +471,30 @@ export function onResponse(body, ctx) {
     safeLog(`[mg-purge] onResponse error, reply left unchanged: ${err && err.message ? err.message : err}`)
     return undefined
   }
+}
+
+// The visible text of a whole (non-streamed) reply, by protocol body shape.
+// Used by onResponse so refusal detection covers the non-streaming path too.
+function replyText(body) {
+  const parts = []
+  const push = (obj, k) => {
+    if (obj && typeof obj[k] === "string") parts.push(obj[k])
+  }
+  if (Array.isArray(body.content)) for (const b of body.content) if (b && b.type === "text") push(b, "text")
+  if (Array.isArray(body.choices)) for (const c of body.choices) push(c && c.message, "content")
+  if (Array.isArray(body.output)) {
+    for (const it of body.output) {
+      if (it && it.type === "message" && Array.isArray(it.content)) {
+        for (const p of it.content) if (p && p.type === "output_text") push(p, "text")
+      }
+    }
+  }
+  if (Array.isArray(body.candidates)) {
+    for (const c of body.candidates) {
+      if (c && c.content && Array.isArray(c.content.parts)) for (const p of c.content.parts) push(p, "text")
+    }
+  }
+  return parts.join("")
 }
 
 // The streamed chunks that carry visible text, by protocol event shape.
