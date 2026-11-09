@@ -73,13 +73,12 @@
     { key: "position", label: "注入位置", type: "enum", opts: [["append", "append 追加（保 cache）"], ["prepend", "prepend 前置"]], hint: "相对 agent 自己的系统提示词" },
     { key: "override", label: "覆盖已有系统提示词", type: "bool", hint: "关闭时仅在请求没有系统提示词时注入" },
     { key: "boost", label: "boost 尾部强化段", type: "bool", hint: "<dsh_boost> 段追加到最后，抗长上下文" },
-    { key: "refusalRetry", label: "拒绝检测 + 加固", type: "bool", hint: "检测回复开头的推脱并追加 nudge" },
+    { key: "refusalRetry", label: "拒绝检测", type: "bool", hint: "检测回复开头的短拒绝并写一行日志（不改回复正文）" },
     { key: "stripThink", label: "剥离 think 标签", type: "bool", hint: "去掉回复开头的 <think>…</think> 块" },
     { key: "agents", label: "仅这些 agent", type: "list", hint: "留空=全部；按 ctx.agent 匹配" },
     { key: "excludeAgents", label: "排除这些 agent", type: "list", hint: "例如 roleplay,minimal 保留自己的提示词" },
     { key: "models", label: "仅这些模型（前缀）", type: "list", hint: "留空=全部；按模型名前缀匹配" },
     { key: "systemPrompt", label: "自定义系统提示词", type: "text", hint: "非空则覆盖预设正文" },
-    { key: "nudge", label: "自定义加固话术", type: "text", hint: "非空则覆盖内置 nudge" },
     { key: "refusalPatterns", label: "额外拒绝正则", type: "list", hint: "字符串数组，叠加在内置规则上" },
   ]
 
@@ -100,8 +99,9 @@
       const val = opts[f.key]
 
       if (f.type === "bool") {
-        const t = magpie.ui ? magpie.ui.toggle(!!val, f.label, (v) => save(f.key, v)) : fallbackToggle(!!val, (v) => save(f.key, v))
-        ctl.append(t)
+        // the page bridge has no `magpie.ui` (that's the window kernel's ctx.ui
+        // for built-in plugins); draw our own switch
+        ctl.append(fallbackToggle(!!val, (v) => save(f.key, v)))
       } else if (f.type === "enum") {
         const b = document.createElement("button")
         b.type = "button"; b.className = "pick"
@@ -118,7 +118,7 @@
         ctl.append(inp)
       } else {
         const ta = document.createElement("textarea")
-        ta.rows = /nudge|systemPrompt/i.test(f.key) ? 3 : 1
+        ta.rows = /systemPrompt/i.test(f.key) ? 3 : 1
         ta.value = typeof val === "string" ? val : ""
         ta.onchange = () => save(f.key, ta.value)
         ctl.append(ta)
@@ -187,7 +187,6 @@
   try {
     opts = (await magpie.options.get()) || {}
   } catch { opts = {} }
-  if (magpie.theme && magpie.theme.pkg) $("ver").textContent = ""
   drawSettings()
   load()
 

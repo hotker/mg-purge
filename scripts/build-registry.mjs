@@ -39,5 +39,15 @@ const entry = {
 
 const out = { version: 1, plugins: [entry] }
 writeFileSync(join(root, "registry.json"), JSON.stringify(out, null, 2) + "\n")
+
+// stamp the version into the dashboard header so the page shows it (the page
+// can't read package.json at runtime — the sandbox has no fs).
+try {
+  const htmlPath = join(root, "page", "index.html")
+  const html = readFileSync(htmlPath, "utf8")
+  const stamped = html.replace(/(<span class="ver" id="ver">)[^<]*(<\/span>)/, `$1v${pkg.version}$2`)
+  if (stamped !== html) writeFileSync(htmlPath, stamped)
+} catch { /* page absent: fine */ }
+
 if (tgz) console.log(`release tarball: ${tgz}`)
 console.log(`registry.json → ${installPackage}@${pkg.version}`)

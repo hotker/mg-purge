@@ -566,5 +566,83 @@
         "一次做完"
       ]
     }
+  },
+  {
+    "name": "models filter: excluded model's streamed reply is NOT stripped",
+    "options": {
+      "preset": "off",
+      "boost": false,
+      "stripThink": true,
+      "refusalRetry": false,
+      "models": [
+        "deepseek"
+      ]
+    },
+    "request": {
+      "model": "gpt-4o",
+      "messages": [
+        {
+          "role": "user",
+          "content": "x"
+        }
+      ]
+    },
+    "events": [
+      {
+        "event": "content_block_delta",
+        "data": {
+          "type": "content_block_delta",
+          "index": 0,
+          "delta": {
+            "type": "text_delta",
+            "text": "<think>hm</think>Hello"
+          }
+        }
+      }
+    ],
+    "expect_events_contains": [
+      [
+        "<think>hm</think>Hello"
+      ]
+    ]
+  },
+  {
+    "name": "models filter: admitted model's streamed reply IS stripped",
+    "options": {
+      "preset": "off",
+      "boost": false,
+      "stripThink": true,
+      "refusalRetry": false,
+      "models": [
+        "deepseek"
+      ]
+    },
+    "request": {
+      "model": "deepseek-chat",
+      "messages": [
+        {
+          "role": "user",
+          "content": "x"
+        }
+      ]
+    },
+    "events": [
+      {
+        "event": "content_block_delta",
+        "data": {
+          "type": "content_block_delta",
+          "index": 0,
+          "delta": {
+            "type": "text_delta",
+            "text": "<think>hm</think>Hello"
+          }
+        }
+      }
+    ],
+    "expect_events_contains": [
+      [
+        "Hello"
+      ]
+    ]
   }
 ]

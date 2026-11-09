@@ -52,13 +52,13 @@ magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalRe
 
 mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panels`）：
 
-- **整页看板**（左侧栏「mg-purge」）：四张卡（调用 / 错误 / 调用成功率 / 成本）+ 按模型调用成功率表 + **全部参数的可视编辑**（预设、位置、override、boost、refusalRetry、stripThink、agents/excludeAgents/models、systemPrompt、nudge、refusalPatterns）。改完即写回插件 options，网关自动热加载，无需重启。
+- **整页看板**（左侧栏「mg-purge」）：四张卡（调用 / 错误 / 调用成功率 / 成本）+ 按模型调用成功率表 + **全部参数的可视编辑**（预设、位置、override、boost、refusalRetry、stripThink、agents/excludeAgents/models、systemPrompt、refusalPatterns）。改完即写回插件 options，网关自动热加载，无需重启。
 - **Usage 面板**（Usage 页底部）：一行看**全网关**调用成功率、调用数、错误数，带进度条（数据是 `usage:summary` 的全局汇总，不是本插件单独的）。
 
 
 **调用成功率口径**：`调用成功率 = 成功调用 / 总调用`，错误含 `status ≥ 400` 与 `errType` 非空。数据来自 magpie 的 `usage:summary` 读（插件声明 `permissions: ["usage:summary"]`，只给总量与每模型汇总，不给 key/账号/会话）。
 
-**网关内计数**：middleware 另导出 `onUsage` / `stats` / `successRate`，在网关进程内累计调用/成功/错误/被拒及按 agent、按模型分布；看板画的是 `usage:summary` 实时汇总，两者口径一致。
+**数据来源**：看板/面板只画 magpie 的 `usage:summary`（实时汇总）。middleware 内部不再维护跨进程计数器——它跑在每请求的 pooled runtime 上，模块级计数与 GUI 读到的不是同一实例，那样的计数没有消费者，已移除。逐次请求日志在 magpie 服务日志（见下）。
 
 ## 选项
 
@@ -74,7 +74,6 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
   "excludeAgents": [],
   "models": [],
   "systemPrompt": "",
-  "nudge": "",
   "refusalPatterns": []
 }
 ```
@@ -82,13 +81,13 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 - **`preset`** — `unrestricted`（默认）/ `redteam` / `coherence` / `minimal` / `off`。`coherence` 是**正常开发用的「连贯执行」包**：让 agent 把已授权、目标明确的任务一次做完、少反复确认、被拒先换路，不带无限制/红队那套 framing——适合日常写代码/运维。`off` 只做 think 剥离与拒绝检测。内置文案见 [`presets/packs.json`](presets/packs.json)。
 - **`position`** — `append`（默认，保住 agent 自己的 prompt cache）或 `prepend`。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。
-- **`boost`** — `false`（默认，见「实测记录」：单轮对测试端点零收益、纯涨 ~458 token）。设 `true` 追加 `<dsh_boost>` 尾部强化段；多轮场景是否值得用 `scripts/ab-multiturn.mjs` 复核。
+- **`boost`** — `false`（默认，见「实测记录」：单轮对测试端点零收益、纯涨 token）。设 `true` 追加精简后的 `<dsh_boost>` 尾部强化段（已去掉与 preset 重复的内容，约 900 字符，是旧版一半）。多轮场景是否值得用 `scripts/ab-multiturn.mjs` 复核。
 - **`refusalRetry`** — `true`（默认）时检测回复开头是否是「短、无实质内容」的推脱，**只检测并写一行日志 `[mg-purge] refusal opening detected`，不修改回复正文**（网关不能重跑模型，拼接话术会漏进用户可见正文并污染下一轮历史）。判定很严：命中须在开头 120 字内、整段 < 300 字、且无「我可以给你 / here's / 下面」这类实际给出的内容，避免误伤正常回答。
 - **`stripThink`** — `true`（默认）时去掉回复开头的 `<think>`/`<thinking>`/`<thought>` 块（流式与整包都处理）。**受 `agents`/`excludeAgents`/`models` 同样约束**：被排除的 agent 其回复原样不动。
 - **`agents` / `excludeAgents`** — 只注入这些 agent / 排除这些 agent（`ctx.agent`）。
 - **`models`** — 只注入模型名前缀匹配的请求。
 - **`systemPrompt`** — 非空则覆盖预设正文。
-- **`nudge`** — 预留字段。当前版本不向流式回复拼接话术（见 `refusalRetry`），此值暂不生效，保留以兼容配置。
+- **`nudge`** — **已弃用**：为兼容旧配置仍接受，但完全不生效（拒绝检测只记录、不拼接任何话术）。可删。
 - **`refusalPatterns`** — 额外拒绝正则（字符串数组），叠加在内置规则上。
 
 ## 收录到 magpie Discover
@@ -122,6 +121,8 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 
 think 剥离与拒绝检测覆盖 Anthropic / Chat / Responses / Gemini 的**流式与整包**回复。中间件**不声明 `events` 白名单**，因此网关把**每一条**流式事件都交给 `onEvent`——包括 Chat 的 SSE chunk（它没有 `type` 字段、只有 `choices/created/id/model/object/usage`），否则最常用的 Chat 流式会被白名单挡在外面、剥离与检测完全不生效。`onEvent` 内部按事件形状（`content_block_delta` / `response.output_text.delta` / `choices[].delta` / `candidates[].parts`）分派。
 
+**边界（magpie 契约决定，无法绕过）**：`onEvent` 只处理**流式**回复，`onResponse` 只处理**整包**回复。带 `Content-Encoding`（如 gzip）的整包回复被 magpie **原样放行、不交给 `onResponse`**。所以 think 剥离在"整包 + 压缩"的链路上会**静默失效**——这是上游/网关行为，不是插件能改的。流式链路（agent 常用）由 `onEvent` 覆盖，不受此影响。
+
 ## 验证
 
 ```sh
@@ -129,9 +130,9 @@ node --test run-cases.mjs unit-checks.test.mjs   # 纯 Node，无需 Bun（CI �
 bun test mg-purge.test.mjs                        # 装了 Bun 时代替上面
 ```
 
-**23 条 `cases.json` + 10 条 `unit-checks.test.mjs`**（CI 同时跑两个文件）覆盖：四个 API 的注入、override、位置、按 agent/模型过滤、boost、think 剥离（**Chat 无 type 的流式跨块** + **Gemini `candidates[].parts`**）、拒绝检测精确度（5 条正常回答不误判；中文「我不能帮你做这个」命中）、「检测但不改正文」、`onResponse` 以 `ctx.state.purge` 为门（不受回包 model 被改写影响，且被排除 agent 原样不动）。`mg-purge.test.mjs` 是独立的 `bun test` 入口，自带同样的关键回归，不再依赖 magpie-community 的 `scripts/middleware.mjs`。
+**26 条 `cases.json` + 15 条 `unit-checks.test.mjs`**（CI 同时跑两个文件）覆盖：四个 API 的注入、override、位置、按 agent/模型过滤、boost、think 剥离（**Chat 无 type 的流式跨块** + **Gemini `candidates[].parts`**）、拒绝检测精确度（5 条正常回答不误判；中文「我不能帮你做这个」命中）、「检测但不改正文」、`onResponse` 以 `ctx.state.purge` 为门、models 过滤下流式回复该剥/不该剥（不受回包 model 被改写影响，且被排除 agent 原样不动）。`mg-purge.test.mjs` 是独立的 `bun test` 入口，自带同样的关键回归，不再依赖 magpie-community 的 `scripts/middleware.mjs`。
 
-拒绝检测的**真信号在 magpie 日志**里：命中时输出 `[mg-purge] refusal opening detected (agent=… model=…)`。（`onEvent` 与 `onUsage` 跑在网关里两个不同的模块实例上，模块级计数器跨实例读不到，也不进 GUI——所以用日志而不是计数器。）
+拒绝检测的**真信号在 magpie 日志**里：命中时输出 `[mg-purge] refusal opening detected (agent=… model=…)`。这是唯一可跨进程读到的信号——middleware 的模块级计数器与 GUI/GUI 读到的不是同一 runtime 实例，所以用日志，不用计数器。
 
 ## 多轮 A/B 测试（boost 是否有救）
 
@@ -166,14 +167,14 @@ node scripts/ab-multiturn.mjs --base http://127.0.0.1:3425 --model your-model \
 | 免费池端点 | 58% | — | 25% |
 
 - **preset 有效且可复现**：拒绝率大跌。
-- **boost 单轮零收益**：preset 与 preset+boost 逐条完全一致（连 502 都一样），尾块 ≈458 token 纯涨 prompt（223→621）。
+- **boost 单轮零收益**：preset 与 preset+boost 逐条完全一致（连 502 都一样），尾块（旧版 ~458 token）纯涨 prompt（223→621）。
 - 结论：**boost 默认关**（`magpie.options.boost:false`）；保留文本，用上面的多轮脚本复核「多轮下是否真有救」再决定删不删。
 
 **长拒绝的分类坑（工程结论，与端点无关）**
 
 同一组 12 条约一半是「守住的拒绝」，而真实模型常写 **1000–1800 字的长拒绝**（带解释）。旧 `length>400=comply` 分类器会把它们**误判成合规**，把拒绝率报得虚低；修正后 `scripts/ab-multiturn.mjs` **先判开头是否拒绝、再判长度**。这是脚本 bug 的修复，与具体模型无关。
 
-**固定开销**：注入生效时，一个单词的请求 prompt 就从 ~50 涨到 ~600 token（preset ~150 + boost ~458）。所以 boost 默认关。
+**固定开销**：注入生效时，一个单词的请求 prompt 就从 ~50 涨到 ~600 token（preset ~150 + 旧版 boost ~458）。boost 已默认关，且文本已精简到约一半。
 
 ## 许可
 

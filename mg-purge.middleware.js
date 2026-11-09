@@ -37,10 +37,12 @@
 //   { "preset": "unrestricted", "position": "append", "override": true,
 //     "boost": true, "refusalRetry": true, "stripThink": true,
 //     "agents": [], "excludeAgents": [], "models": [],
-//     "systemPrompt": "", "nudge": "", "refusalPatterns": [] }
+//     "systemPrompt": "", "refusalPatterns": [] }
 //
-// Leave `systemPrompt` / `nudge` / `refusalPatterns` empty to use the built-in
-// packs (see presets/packs.json). A non-empty value overrides the preset.
+// Leave `systemPrompt` / `refusalPatterns` empty to use the built-in packs (see
+// presets/packs.json). A non-empty value overrides the preset. (An older
+// `nudge` key is still accepted in options but is unused — the refusal path
+// only detects and logs, it never splices text into the reply.)
 
 import PACKS_NS from "./presets/packs.mjs"
 const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
@@ -271,10 +273,9 @@ function resolve(o) {
     prompt = prompt ? prompt + "\n\n" + PACKS.boost : PACKS.boost
   }
 
-  const nudge = typeof o.nudge === "string" && o.nudge ? o.nudge : (PACKS && PACKS.nudge) || ""
   const refusalPatterns = Array.isArray(o.refusalPatterns) ? o.refusalPatterns : []
 
-  return { prompt, nudge, refusalPatterns }
+  return { prompt, refusalPatterns }
 }
 
 function appliesTo(body, ctx, o) {
@@ -307,19 +308,16 @@ export function onRequest(body, ctx) {
   try {
     if (!appliesTo(body, ctx, o)) return
 
-    const { prompt, nudge, refusalPatterns } = resolve(o)
+    const { prompt, refusalPatterns } = resolve(o)
     const override = o.override !== false
     const before = o.position === "prepend"
     const out = prompt ? injectPrompt(body, prompt, override, before, ctx) : body
 
-    // remember, for the stream hooks of this same request, whether a retry nudge
-    // is needed and whether to strip thinking
+    // per-request state the stream hooks share (one runtime per request)
     ctx.state.purge = {
       refusalRetry: o.refusalRetry !== false,
       stripThink: o.stripThink !== false,
-      nudge,
       refusalPatterns,
-      nudged: false,
       decided: false,
       buffered: "",
       strippers: {}, // per-stream-key tag stripper state, kept for the request
@@ -369,7 +367,6 @@ export function onEvent(ev, ctx) {
     if (st.refusalRetry && !st.decided) {
       st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
-        st.nudged = true
         st.decided = true
         safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
       } else if (st.buffered.length > REFUSAL_MAX || /[。！？\n]/.test(st.buffered)) {
@@ -465,46 +462,3 @@ function eventTexts(ev) {
   }
   return out
 }
-
-// ── statistics ──────────────────────────────────────────────────────────────
-//
-// onUsage gets each ledger row (no bodies, prompts or error text). It keeps a
-// running tally in module scope, for diagnostics magpie's Plugins page can't
-// show. A row with status >= 400 or errType set is a failed call; the dashboard
-// page reads the same picture live from usage:summary, so these counters are a
-// second, in-gateway view rather than the source the page draws from.
-export const stats = {
-  since: Date.now(),
-  calls: 0,
-  ok: 0,
-  errors: 0,
-  rejected: 0,
-  byAgent: {},
-  byModel: {},
-}
-
-export function onUsage(row) {
-  if (!row || typeof row !== "object") return
-  stats.calls++
-  const failed = (typeof row.status === "number" && row.status >= 400) || (row.errType && row.errType !== "")
-  if (failed) stats.errors++
-  else stats.ok++
-  if (row.rejected) stats.rejected++
-  const agent = row.agent || "?"
-  const model = row.served || row.requested || row.model || "?"
-  bump(stats.byAgent, agent, failed)
-  bump(stats.byModel, model, failed)
-}
-
-function bump(map, key, failed) {
-  const b = map[key] || (map[key] = { calls: 0, ok: 0, errors: 0 })
-  b.calls++
-  if (failed) b.errors++
-  else b.ok++
-}
-
-// successRate is ok / calls as a 0–1 ratio (1 when no calls yet).
-export function successRate() {
-  return stats.calls ? stats.ok / stats.calls : 1
-}
-
