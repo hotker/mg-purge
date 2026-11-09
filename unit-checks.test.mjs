@@ -1,6 +1,5 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import fs from "node:fs"
 import * as m from "./mg-purge.middleware.js"
 
 // helper: run a request then an event, return captured console.log lines
@@ -215,29 +214,20 @@ test("refusal detection logs the opening and never edits the reply", () => {
   const { logs } = runRefusal({ refusalDetect: true })
   assert.ok(logs.some((l) => l.includes("refusal opening detected")), "should log the detection")
 })
-test("the deprecated refusalRetry key warns once and only detects", async () => {
-  // magpie runs every middleware call in its own isolate, so the "already
-  // warned" state is a marker FILE, not a variable. Point it at a scratch path
-  // and clear it so this test gets a clean slate.
-  const marker = "/tmp/.mg-purge-test-deprecation"
-  process.env.MG_PURGE_DEPRECATION_MARKER = marker
-  try { fs.unlinkSync(marker) } catch { /* not there yet */ }
-  const fresh = await import("./mg-purge.middleware.js?deprecation-warning")
-  const run = (opts) => {
-    const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, ...opts }, state: {} }
-    // onRequest is where the deprecation warning fires, so it must be inside
-    // withLog too — capturing only onEvent would miss it.
-    return withLog(() => {
-      fresh.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
-      return fresh.onEvent(
-        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "我不能帮你做这个。" } },
-        ctx,
-      )
-    })
-  }
-  assert.ok(run({ refusalRetry: true }).some((l) => l.includes("`refusalRetry` is deprecated")), "should warn about the old key")
-  assert.equal(run({ refusalRetry: true }).filter((l) => l.includes("is deprecated")).length, 0, "warns only once")
-  // the new key must never warn
-  assert.equal(run({ refusalDetect: true }).filter((l) => l.includes("is deprecated")).length, 0)
-  try { fs.unlinkSync(marker) } catch { /* already gone */ }
+test("the deprecated refusalRetry key still works and stays silent", async () => {
+  // No runtime warning is possible: a middleware runs in magpie's sandbox with
+  // no node:fs and a fresh isolate per call, so "warn once" would repeat on
+  // every request. The rename is documented in the README and the panel instead.
+  const fresh = await import("./mg-purge.middleware.js?alias-silent")
+  const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, refusalRetry: true }, state: {} }
+  const logs = withLog(() => {
+    fresh.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+    return fresh.onEvent(
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "我不能帮你做这个。" } },
+      ctx,
+    )
+  })
+  assert.equal(ctx.state.purge.refusalDetect, true, "the old key still enables detection")
+  assert.ok(logs.some((l) => l.includes("refusal opening detected")), "and still detects")
+  assert.equal(logs.filter((l) => l.includes("deprecated")).length, 0, "but never warns")
 })
