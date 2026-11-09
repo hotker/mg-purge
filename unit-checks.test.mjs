@@ -38,8 +38,8 @@ test("a non-excluded agent's reply is still stripped", () => {
 // stream path keeps stripping. Here models filter admits the request, then the
 // reply's model is something else entirely; it must still strip.
 test("onResponse strips even when the reply's model differs from the request", () => {
-  const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["deepseek"] }, state: {} }
-  m.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "x" }] }, ctx)
+  const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["example"] }, state: {} }
+  m.onRequest({ model: "example-model", messages: [{ role: "user", content: "x" }] }, ctx)
   assert.ok(ctx.state.purge, "request passed the model filter")
   const body = { model: "group/test", content: [{ type: "text", text: "<think>hm</think>Hello" }] }
   assert.equal(m.onResponse(body, ctx).content[0].text, "Hello")
@@ -47,7 +47,7 @@ test("onResponse strips even when the reply's model differs from the request", (
 
 // ...and a reply with no state.purge (request never passed) is left whole
 test("onResponse leaves a reply whole when the request didn't pass onRequest", () => {
-  const ctx = { protocol: "anthropic", model: "", options: { preset: "off", stripThink: true, models: ["deepseek"] }, state: {} }
+  const ctx = { protocol: "anthropic", model: "", options: { preset: "off", stripThink: true, models: ["example"] }, state: {} }
   m.onRequest({ model: "gpt-4o", messages: [{ role: "user", content: "x" }] }, ctx) // filtered out
   const body = { content: [{ type: "text", text: "<think>hm</think>Hello" }] }
   assert.equal(m.onResponse(body, ctx), undefined)
@@ -115,7 +115,7 @@ test("gemini streamed parts still get think stripped", () => {
 // B: a non-2xx reply is logged with status/model/injected — never the prompt
 test("error replies are logged with status, models, injected flag", () => {
   const ctx = { protocol: "chat", model: "", agent: "codex", status: 502, options: { preset: "unrestricted", stripThink: false }, state: {} }
-  m.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "SECRET PROMPT" }] }, ctx)
+  m.onRequest({ model: "example-model", messages: [{ role: "user", content: "SECRET PROMPT" }] }, ctx)
   const body = { model: "group/test", error: { type: "upstream_error" } }
   const logs = withLog(() => m.onResponse(body, ctx))
   const line = logs.find((l) => l.includes("[mg-purge] error 502"))

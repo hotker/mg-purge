@@ -62,8 +62,8 @@ test("excludeAgents: reply not stripped for an excluded agent", () => {
 })
 
 test("onResponse strips when the reply's model differs from the request", () => {
-  const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["deepseek"] }, state: {} }
-  mod.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "x" }] }, ctx)
+  const ctx = { protocol: "anthropic", model: "", agent: "codex", options: { preset: "off", stripThink: true, models: ["example"] }, state: {} }
+  mod.onRequest({ model: "example-model", messages: [{ role: "user", content: "x" }] }, ctx)
   const body = { model: "group/test", content: [{ type: "text", text: "<think>hm</think>Hello" }] }
   assert.equal(mod.onResponse(body, ctx).content[0].text, "Hello")
 })
@@ -91,7 +91,7 @@ test("the module exports no events whitelist", () => {
 
 test("error replies are logged with status, models, injected flag (no prompt)", () => {
   const ctx = { protocol: "chat", model: "", agent: "codex", status: 502, options: { preset: "unrestricted", stripThink: false }, state: {} }
-  mod.onRequest({ model: "deepseek-chat", messages: [{ role: "user", content: "SECRET" }] }, ctx)
+  mod.onRequest({ model: "example-model", messages: [{ role: "user", content: "SECRET" }] }, ctx)
   const logs = withLog(() => mod.onResponse({ model: "group/test", error: { type: "upstream_error" } }, ctx))
   const line = logs.find((l) => l.includes("[mg-purge] error 502"))
   assert.ok(line && line.includes("injected=yes"))

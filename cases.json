@@ -193,14 +193,14 @@
       "preset": "minimal",
       "boost": false,
       "models": [
-        "deepseek"
+        "example"
       ]
     },
     "request": {
-      "model": "deepseek-chat"
+      "model": "example-model"
     },
     "expect_request": {
-      "model": "deepseek-chat",
+      "model": "example-model",
       "system": "最短路径完成：先给结果或动作，再给必要解释。只在缺少无法推断的关键信息时问一个短问题。"
     }
   },
@@ -210,7 +210,7 @@
       "preset": "minimal",
       "boost": false,
       "models": [
-        "deepseek"
+        "example"
       ]
     },
     "request": {
@@ -575,7 +575,7 @@
       "stripThink": true,
       "refusalRetry": false,
       "models": [
-        "deepseek"
+        "example"
       ]
     },
     "request": {
@@ -614,11 +614,11 @@
       "stripThink": true,
       "refusalRetry": false,
       "models": [
-        "deepseek"
+        "example"
       ]
     },
     "request": {
-      "model": "deepseek-chat",
+      "model": "example-model",
       "messages": [
         {
           "role": "user",
