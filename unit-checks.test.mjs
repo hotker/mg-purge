@@ -180,3 +180,12 @@ test("an onRequest failure leaves the request's own body untouched", () => {
   // must not throw; either it injected safely or left as-is, but no crash
   assert.ok(out === undefined || typeof out === "object")
 })
+
+// ab harness URL: base with or without /v1 must not double up
+import { chatUrl } from "./scripts/endpoint.mjs"
+test("chatUrl never doubles /v1", () => {
+  assert.equal(chatUrl("http://127.0.0.1:3425"), "http://127.0.0.1:3425/v1/chat/completions")
+  assert.equal(chatUrl("http://127.0.0.1:3425/"), "http://127.0.0.1:3425/v1/chat/completions")
+  assert.equal(chatUrl("https://host/v1"), "https://host/v1/chat/completions")
+  assert.equal(chatUrl("https://host/v1/"), "https://host/v1/chat/completions")
+})

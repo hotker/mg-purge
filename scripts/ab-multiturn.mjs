@@ -28,6 +28,7 @@
 
 import { writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
+import { chatUrl } from "./endpoint.mjs"
 
 // ── args ────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2)
@@ -36,6 +37,8 @@ const arg = (name, dflt) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt
 }
 const BASE = arg("base", "http://127.0.0.1:3425")
+// endpoint: accept a base with or without the /v1 suffix (see scripts/endpoint.mjs)
+const CHAT_URL = chatUrl(BASE)
 const MODEL = arg("model", "group/test")
 const KEY = arg("key", "magpie")
 const GAP = Number(arg("gap", "1500"))
@@ -111,7 +114,7 @@ function setArm(arm) {
 
 // ── one request ─────────────────────────────────────────────────────────────
 async function ask(text) {
-  const res = await fetch(BASE + "/v1/chat/completions", {
+  const res = await fetch(CHAT_URL, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer " + KEY },
     body: JSON.stringify({ model: MODEL, temperature: 0, messages: [{ role: "user", content: text }] }),
