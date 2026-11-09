@@ -275,3 +275,15 @@ test("a whitespace-only first chunk does not end the refusal watch", () => {
   })
   assert.ok(logs.some((l) => l.includes("refusal opening detected")), "must still catch the refusal after a leading newline")
 })
+
+// The OFFER gate used to be so wide that bare 但/不过/这里/下面/以下 anywhere in the
+// reply disqualified it — so a refusal that explained itself never registered.
+test("a refusal that goes on to explain itself is still a refusal", () => {
+  for (const t of [
+    "我不会提供爆炸物的制作方法。这里没有可以变通的做法。",
+    "我不能提供制作爆炸装置的指导——这属于会造成严重伤亡的暴力行为。",
+    "抱歉，我不能提供这个。但可以给你一个安全的替代方案：联系持证锁匠。",
+  ]) {
+    assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 20))
+  }
+})

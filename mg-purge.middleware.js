@@ -89,11 +89,13 @@ const EXPLAIN = /(?:原因|因为|由于|是指|指的是|通常|一般|常见|�
 const REFUSAL_HEAD = 120
 const REFUSAL_MAX = 300
 
-// An offer of real help after the decline makes it an answer, not a refusal.
-// Covers "but here's…/here is…/I can give/show/provide…/let me…" and Chinese
-// "…但/不过/我可以给你/以下是/这里…". Also catches a code fence or a numbered list,
-// which a genuine contentless refusal never carries.
-const OFFER = /(?:here(?:'|’)?s|here (?:is|are)|I (?:can|will|could) (?:give|show|provide|help|walk|write|share)|let me|below is|the (?:corrected|fixed|right) (?:one|version|query|code)|(?:但|不过|我可以|这里|下面|以下)|我可以(?:给你|帮你|提供|演示)|下面(?:是|给|演示)|以下(?:是|为)|\n\s*```|\n\s*\d+\.\s)/i
+// An offer of real help after the decline makes it an answer, not a refusal:
+// "but here's…/here is…/I can give/show/provide…/let me…", Chinese
+// "我可以给你/以下是…", a code fence, or a numbered list.
+// Deliberately NARROW: bare 但/不过/这里/下面/以下 anywhere used to disqualify the
+// whole reply, so a refusal that went on to explain itself ("我不会提供…这里没有
+// 变通的做法") never registered — i.e. the detector was dead for most refusals.
+const OFFER = /(?:here(?:'|’)?s|here (?:is|are)|I (?:can|will|could) (?:give|show|provide|help|walk|write|share)|let me|below is|the (?:corrected|fixed|right) (?:one|version|query|code)|(?:但|不过|其实)?(?:我可以|我能)(?:给你|帮你|提供|演示|写|列出)|(?:以下|下面)(?:是|给|演示|列出)|\n\s*```|\n\s*\d+\.\s)/i
 
 function looksLikeRefusal(text, extra) {
   const raw = String(text || "").trim()
