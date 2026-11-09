@@ -215,10 +215,11 @@ test("refusal detection logs the opening and never edits the reply", () => {
   assert.ok(logs.some((l) => l.includes("refusal opening detected")), "should log the detection")
 })
 test("the deprecated refusalRetry key warns once and only detects", async () => {
-  // A fresh module instance so the once-per-process flag starts clear — other
-  // tests above already used the old key. ESM treats a query string as a
-  // distinct module, so this is a real clean slate, not a test-only hook.
+  // A fresh module instance so nothing else in this file has primed the state.
+  // The once-per-runtime flag lives on globalThis (magpie re-instantiates the
+  // module per request), so clear it here to get a clean slate.
   const fresh = await import("./mg-purge.middleware.js?deprecation-warning")
+  globalThis.__mgPurgeWarnedRetry = false
   const run = (opts) => {
     const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, ...opts }, state: {} }
     // onRequest is where the deprecation warning fires, so it must be inside

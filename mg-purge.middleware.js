@@ -297,7 +297,9 @@ function appliesTo(body, ctx, o) {
 // of malformed bodies can't flood magpie's log (at most ~60 lines a minute,
 // matching magpie's own middleware log budget).
 let _logWindow = 0, _logCount = 0
-let _warnedRetry = false
+// magpie re-instantiates this module per request, so a module-level flag would
+// warn on every request. Keep the once-per-runtime flag on globalThis instead.
+const _G = typeof globalThis !== "undefined" ? globalThis : {}
 function safeLog(line) {
   try {
     const now = Date.now()
@@ -321,8 +323,8 @@ export function onRequest(body, ctx) {
     // `refusalDetect` is the honest name: this hook cannot re-run the model, so
     // it only detects and logs. `refusalRetry` is a deprecated alias that maps
     // to the same switch (either key set to false disables detection).
-    if (Object.prototype.hasOwnProperty.call(o, "refusalRetry") && !_warnedRetry) {
-      _warnedRetry = true
+    if (Object.prototype.hasOwnProperty.call(o, "refusalRetry") && !_G.__mgPurgeWarnedRetry) {
+      _G.__mgPurgeWarnedRetry = true
       safeLog(
         "[mg-purge] option `refusalRetry` is deprecated: a gateway middleware cannot re-run the model," +
           " so this plugin only DETECTS and logs a refusal. Use `refusalDetect`; `refusalRetry` is still" +
