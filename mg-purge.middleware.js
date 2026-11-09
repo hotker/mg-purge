@@ -72,6 +72,16 @@ export const REFUSAL_PATTERNS = [
   /^这(?:一)?步我(?:不做|不参与|不帮)/,
 ]
 
+// Common Chinese declines that do NOT lead with 我/抱歉 — "无法提供…",
+// "这是诈骗话术，我不会写。" Guarded by LOOSE_MAX and EXPLAIN below, because
+// the same opening also starts a legitimate answer ("无法提供服务的原因…").
+const LOOSE_REFUSAL_PATTERNS = [
+  /^(?:无法|不能|不会|不予)(?:提供|协助|帮助|满足|告知|给出|告诉)/,
+  /^这(?:是|属于|种)[^。\n]{0,20}(?:我不会写|我不做|我不能|无法提供|不能提供|不提供)/,
+]
+const LOOSE_MAX = 160
+const EXPLAIN = /(?:原因|因为|由于|是指|指的是|通常|一般|常见|取决于)/
+
 // A refusal is short and contentless: the operator gets a decline, not an
 // answer. So a match only counts when it opens the text (first 120 chars) AND
 // the whole reply is small — a long answer that merely *says* "作为 AI" or
@@ -96,6 +106,9 @@ function looksLikeRefusal(text, extra) {
   // a decline wrapped around actual help (or a code block / numbered list) is an answer
   if (OFFER.test(raw)) return false
   const pats = Array.isArray(extra) && extra.length ? [...REFUSAL_PATTERNS, ...compileUserPatterns(extra)] : REFUSAL_PATTERNS
+  // Looser openers, only for a short text that is not an explanation of why
+  // something cannot be provided.
+  if (raw.length <= LOOSE_MAX && !EXPLAIN.test(head) && LOOSE_REFUSAL_PATTERNS.some((re) => re.test(head))) return true
   return pats.some((re) => {
     try { return re.test(head) } catch { return false }
   })
@@ -380,9 +393,15 @@ export function onEvent(ev, ctx) {
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
         st.decided = true
         safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
-      } else if (st.buffered.length > REFUSAL_MAX || /[。！？\n]/.test(st.buffered)) {
-        // too long to be a contentless refusal, or the reply carried on: not one
-        st.decided = true
+      } else {
+        // Trim before testing for a terminator: models often open with "\n\n",
+        // and a whitespace-only prefix must not end the watch before the text
+        // arrives (that silently missed real refusals).
+        const seen = st.buffered.trim()
+        if (st.buffered.length > REFUSAL_MAX || (seen && /[。！？\n]/.test(seen))) {
+          // too long to be a contentless refusal, or the reply carried on: not one
+          st.decided = true
+        }
       }
     }
 

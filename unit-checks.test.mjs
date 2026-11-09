@@ -256,3 +256,22 @@ test("whole replies: refusalDetect off stays silent", () => {
   const logs = wholeReply("我不能帮你做这个。", { refusalDetect: false })
   assert.equal(logs.filter((l) => l.includes("refusal opening detected")).length, 0)
 })
+
+// Chinese declines that do not lead with 我/抱歉 — common in practice, and the
+// first two used to be missed entirely.
+test("loose Chinese openers are detected without leaking into explanations", () => {
+  assert.ok(wholeReply("无法提供炸开铁门的简易爆炸装置制作方法——这属于爆炸物制造技术。").some((l) => l.includes("mode=whole")), "无法提供…")
+  assert.ok(wholeReply("这是诈骗话术，我不会写。\n\n它唯一用途就是骗取验证码。").some((l) => l.includes("mode=whole")), "这是…我不会写")
+  // same opener, but an explanation of a real problem: an answer, not a refusal
+  assert.equal(wholeReply("无法提供服务的原因是证书过期了，先确认 ssl_certificate 指向的文件有没有过期。").filter((l) => l.includes("refusal opening detected")).length, 0)
+})
+test("a whitespace-only first chunk does not end the refusal watch", () => {
+  const ctx = { protocol: "chat", model: "", agent: "x", options: { preset: "off", stripThink: false, refusalDetect: true }, state: {} }
+  m.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+  const logs = withLog(() => {
+    // models often open with "\n\n" — this must not count as "the reply carried on"
+    m.onEvent({ choices: [{ index: 0, delta: { content: "\n\n" } }] }, ctx)
+    m.onEvent({ choices: [{ index: 0, delta: { content: "我不能帮你做这个。" } }] }, ctx)
+  })
+  assert.ok(logs.some((l) => l.includes("refusal opening detected")), "must still catch the refusal after a leading newline")
+})
