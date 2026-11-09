@@ -189,3 +189,50 @@ test("chatUrl never doubles /v1", () => {
   assert.equal(chatUrl("https://host/v1"), "https://host/v1/chat/completions")
   assert.equal(chatUrl("https://host/v1/"), "https://host/v1/chat/completions")
 })
+
+// refusalDetect is the honest name; refusalRetry is a deprecated alias for the
+// SAME switch. Both keys must keep working, and neither may ever retry — the
+// gateway cannot re-run the model, so the only observable effect is a log line.
+function runRefusal(opts) {
+  const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, ...opts }, state: {} }
+  m.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+  const logs = withLog(() => m.onEvent(
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "我不能帮你做这个。" } },
+    ctx,
+  ))
+  return { logs, state: ctx.state.purge }
+}
+test("refusalDetect: on by default, off when either key is false", () => {
+  assert.equal(runRefusal({}).state.refusalDetect, true, "default is on")
+  assert.equal(runRefusal({ refusalDetect: true }).state.refusalDetect, true)
+  assert.equal(runRefusal({ refusalDetect: false }).state.refusalDetect, false)
+  // deprecated alias keeps working, in both directions
+  assert.equal(runRefusal({ refusalRetry: true }).state.refusalDetect, true)
+  assert.equal(runRefusal({ refusalRetry: false }).state.refusalDetect, false)
+})
+test("refusal detection logs the opening and never edits the reply", () => {
+  const { logs } = runRefusal({ refusalDetect: true })
+  assert.ok(logs.some((l) => l.includes("refusal opening detected")), "should log the detection")
+})
+test("the deprecated refusalRetry key warns once and only detects", async () => {
+  // A fresh module instance so the once-per-process flag starts clear — other
+  // tests above already used the old key. ESM treats a query string as a
+  // distinct module, so this is a real clean slate, not a test-only hook.
+  const fresh = await import("./mg-purge.middleware.js?deprecation-warning")
+  const run = (opts) => {
+    const ctx = { protocol: "anthropic", model: "", agent: "x", options: { preset: "off", stripThink: false, ...opts }, state: {} }
+    // onRequest is where the deprecation warning fires, so it must be inside
+    // withLog too — capturing only onEvent would miss it.
+    return withLog(() => {
+      fresh.onRequest({ model: "m", messages: [{ role: "user", content: "q" }] }, ctx)
+      return fresh.onEvent(
+        { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "我不能帮你做这个。" } },
+        ctx,
+      )
+    })
+  }
+  assert.ok(run({ refusalRetry: true }).some((l) => l.includes("`refusalRetry` is deprecated")), "should warn about the old key")
+  assert.equal(run({ refusalRetry: true }).filter((l) => l.includes("is deprecated")).length, 0, "warns only once")
+  // the new key must never warn
+  assert.equal(run({ refusalDetect: true }).filter((l) => l.includes("is deprecated")).length, 0)
+})

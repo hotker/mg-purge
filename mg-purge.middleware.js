@@ -21,8 +21,10 @@
 //                  must not edit a reply already streaming to the operator, so
 //                  there is no retry and no nudge spliced in (dsh-purge's
 //                  `refusal-retry.js` re-runs on the DSH host; here that layer
-//                  has no gateway equivalent). + refusalPatterns lets an
-//                  operator extend the detector.
+//                  has no gateway equivalent). The option is therefore named
+//                  `refusalDetect`; the old `refusalRetry` key is still accepted
+//                  as a deprecated alias and only ever detects.
+//                  + refusalPatterns lets an operator extend the detector.
 //   4. think     — strip a leading <think>…</think> block so the agent doesn't
 //                  carry it in history (dsh-purge's clean-reply behavior),
 //                  ported from magpie-community's middleware-think-tags.
@@ -35,14 +37,15 @@
 // Config lives in the plugin's `options` in magpie's plugins.json:
 //
 //   { "preset": "unrestricted", "position": "append", "override": true,
-//     "boost": true, "refusalRetry": true, "stripThink": true,
+//     "boost": true, "refusalDetect": true, "stripThink": true,
 //     "agents": [], "excludeAgents": [], "models": [],
 //     "systemPrompt": "", "refusalPatterns": [] }
 //
 // Leave `systemPrompt` / `refusalPatterns` empty to use the built-in packs (see
-// presets/packs.json). A non-empty value overrides the preset. (An older
-// `nudge` key is still accepted in options but is unused — the refusal path
-// only detects and logs, it never splices text into the reply.)
+// presets/packs.json). A non-empty value overrides the preset. (`refusalRetry`
+// is accepted as a deprecated alias of `refusalDetect`; an older `nudge` key is
+// still accepted but unused — the refusal path only detects and logs, it never
+// splices text into the reply.)
 
 import PACKS_NS from "./presets/packs.mjs"
 const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
@@ -294,6 +297,7 @@ function appliesTo(body, ctx, o) {
 // of malformed bodies can't flood magpie's log (at most ~60 lines a minute,
 // matching magpie's own middleware log budget).
 let _logWindow = 0, _logCount = 0
+let _warnedRetry = false
 function safeLog(line) {
   try {
     const now = Date.now()
@@ -314,8 +318,19 @@ export function onRequest(body, ctx) {
     const out = prompt ? injectPrompt(body, prompt, override, before, ctx) : body
 
     // per-request state the stream hooks share (one runtime per request)
+    // `refusalDetect` is the honest name: this hook cannot re-run the model, so
+    // it only detects and logs. `refusalRetry` is a deprecated alias that maps
+    // to the same switch (either key set to false disables detection).
+    if (Object.prototype.hasOwnProperty.call(o, "refusalRetry") && !_warnedRetry) {
+      _warnedRetry = true
+      safeLog(
+        "[mg-purge] option `refusalRetry` is deprecated: a gateway middleware cannot re-run the model," +
+          " so this plugin only DETECTS and logs a refusal. Use `refusalDetect`; `refusalRetry` is still" +
+          " accepted as an alias for the same switch.",
+      )
+    }
     ctx.state.purge = {
-      refusalRetry: o.refusalRetry !== false,
+      refusalDetect: o.refusalDetect !== false && o.refusalRetry !== false,
       stripThink: o.stripThink !== false,
       refusalPatterns,
       decided: false,
@@ -364,7 +379,7 @@ export function onEvent(ev, ctx) {
     // Test every chunk (cheap), and stop watching once a refusal matched, once the
     // opening is long enough that no contentless refusal fits, or at a terminator —
     // so a short refusal with no punctuation ("No, I won't") is caught on chunk 1.
-    if (st.refusalRetry && !st.decided) {
+    if (st.refusalDetect && !st.decided) {
       st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
       if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
         st.decided = true

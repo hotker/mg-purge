@@ -73,7 +73,7 @@
     { key: "position", label: "注入位置", type: "enum", opts: [["append", "append 追加（保 cache）"], ["prepend", "prepend 前置"]], hint: "相对 agent 自己的系统提示词" },
     { key: "override", label: "覆盖已有系统提示词", type: "bool", hint: "关闭时仅在请求没有系统提示词时注入" },
     { key: "boost", label: "boost 尾部强化段", type: "bool", hint: "<dsh_boost> 段追加到最后，抗长上下文" },
-    { key: "refusalRetry", label: "拒绝检测", type: "bool", hint: "检测回复开头的短拒绝并写一行日志（不改回复正文）" },
+    { key: "refusalDetect", label: "拒绝检测", type: "bool", hint: "检测回复开头的短拒绝并写一行日志（不改回复正文；没有 retry）" },
     { key: "stripThink", label: "剥离 think 标签", type: "bool", hint: "去掉回复开头的 <think>…</think> 块" },
     { key: "agents", label: "仅这些 agent", type: "list", hint: "留空=全部；按 ctx.agent 匹配" },
     { key: "excludeAgents", label: "排除这些 agent", type: "list", hint: "例如 roleplay,minimal 保留自己的提示词" },

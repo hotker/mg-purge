@@ -45,7 +45,7 @@
 
 ```sh
 magpie plugin add mg-purge
-magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalRetry":true,"stripThink":true}'
+magpie plugin options mg-purge '{"preset":"unrestricted","boost":true,"refusalDetect":true,"stripThink":true}'
 ```
 
 在 app 里：**插件 → 发现 → Gateway middleware** 出现 mg-purge；装好后左侧栏多出整页看板，Usage 页底部多出成功率面板。

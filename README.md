@@ -12,7 +12,7 @@ magpie 的 middleware 只站在**网关**这一层：改写 agent 发给模型�
 | --- | --- | --- |
 | 系统提示词注入 | `preset` + `agents` / `excludeAgents` / `models` | 把选定预设注入到各 API 的系统提示词位置，可按 agent / 模型过滤 |
 | 尾部强化段 | `boost` | 将 `<dsh_boost>` 段追加到最后，抵抗长上下文与多轮漂移 |
-| 拒绝检测 | `refusalRetry` | 检测回复开头的短拒绝并写一行日志，**不改动回复正文** |
+| 拒绝检测 | `refusalDetect` | 检测回复开头的短拒绝并写一行日志，**不改动回复正文**（旧键 `refusalRetry` 仍兼容，但同样只检测） |
 | think 剥离 | `stripThink` | 去掉回复开头的 `<think>…</think>`，不留在历史里 |
 
 需要「改审批 / 沙箱 / agent 循环」那种改动宿主本体的能力，请用 dsh-purge 改 DSH 宿主；mg-purge 只让 **所有** magpie 下游 agent（Claude Code / Codex / DSH / …）共享同一份提示词注入。
@@ -34,7 +34,7 @@ magpie plugin add mg-purge
 - 或用命令：
 
 ```sh
-magpie plugin options mg-purge '{"preset":"unrestricted","boost":false,"refusalRetry":true,"stripThink":true}'
+magpie plugin options mg-purge '{"preset":"unrestricted","boost":false,"refusalDetect":true,"stripThink":true}'
 ```
 
 ## 看板与面板
@@ -54,7 +54,7 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
   "position": "append",
   "override": true,
   "boost": false,
-  "refusalRetry": true,
+  "refusalDetect": true,
   "stripThink": true,
   "agents": [],
   "excludeAgents": [],
@@ -68,7 +68,8 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 - **`position`** — `append`（默认，保住 agent 自己的 prompt cache）或 `prepend`。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。
 - **`boost`** — `false`（默认）。设 `true` 追加 `<dsh_boost>` 尾部强化段（约 900 字符）。
-- **`refusalRetry`** — `true`（默认）。检测回复开头是否有「短、无实质内容」的推脱，命中时写一行日志 `[mg-purge] refusal opening detected`，**不修改回复正文**。判定条件：命中须在开头 120 字内、整段 < 300 字、且未附带实际内容（代码块、编号步骤、「我可以给你 / here's / 下面」等）。
+- **`refusalDetect`** — `true`（默认）。检测回复开头是否有「短、无实质内容」的推脱，命中时写一行日志 `[mg-purge] refusal opening detected`，**不修改回复正文**。判定条件：命中须在开头 120 字内、整段 < 300 字、且未附带实际内容（代码块、编号步骤、「我可以给你 / here's / 下面」等）。
+  > **没有 retry。** 网关中间件无法重跑模型，也不能改一条已在流式输出的回复，所以这里只检测、只记日志。该选项因此叫 `refusalDetect`；旧名 `refusalRetry` 仍被接受为兼容别名（同样只检测），首次使用会打一行弃用提示。
 - **`stripThink`** — `true`（默认）。去掉回复开头的 `<think>` / `<thinking>` / `<thought>` 块，流式与整包都处理。受 `agents` / `excludeAgents` / `models` 同样约束。
 - **`agents` / `excludeAgents`** — 只注入这些 agent / 排除这些 agent（按 `ctx.agent`）。
 - **`models`** — 只注入模型名前缀匹配的请求。
