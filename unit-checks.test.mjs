@@ -287,3 +287,38 @@ test("a refusal that goes on to explain itself is still a refusal", () => {
     assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 20))
   }
 })
+
+// ── context-ceiling guard ───────────────────────────────────────────────────
+// A 400 in production showed the injected preset+boost (~1.2k chars) tipping a
+// 260645-token prompt one token past a 262144 window. Injection must not run on
+// a request that is already enormous; detection and stripping must.
+test("injection is skipped for a body at/over the char guard", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "unrestricted", boost: true }, state: {} }
+  const body = { model: "m", messages: [{ role: "user", content: "x".repeat(900000) }] }
+  let out
+  const logs = withLog(() => {
+    out = m.onRequest(body, ctx)
+  })
+  assert.equal(out, undefined, "no rewrite when it would only grow a huge prompt")
+  assert.equal(ctx.state.purge.injected, false)
+  assert.equal(body.messages[0].role, "user", "the request is left exactly as it came")
+  assert.ok(logs.some((l) => l.includes("injection skipped")))
+})
+
+test("a normal request still gets the preset + boost", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "unrestricted", boost: true }, state: {} }
+  const body = { model: "m", messages: [{ role: "user", content: "hi" }] }
+  const out = m.onRequest(body, ctx)
+  assert.ok(out && out.messages[0].role === "system" && out.messages[0].content.length > 600)
+  assert.equal(ctx.state.purge.injected, true)
+})
+
+test("the guard is configurable, and detection still runs when it trips", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "unrestricted", injectMaxBodyChars: 1000, refusalDetect: true }, state: {} }
+  assert.equal(m.onRequest({ model: "m", messages: [{ role: "user", content: "x".repeat(2000) }] }, ctx), undefined)
+  assert.equal(ctx.state.purge.injected, false)
+  const logs = withLog(() => {
+    m.onResponse({ model: "m", choices: [{ message: { role: "assistant", content: "我不能帮你做这个。" } }] }, ctx)
+  })
+  assert.ok(logs.some((l) => l.includes("mode=whole")), "refusal detection survives a skipped injection")
+})

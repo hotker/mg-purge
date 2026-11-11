@@ -39,7 +39,7 @@
 //   { "preset": "unrestricted", "position": "append", "override": true,
 //     "boost": true, "refusalDetect": true, "stripThink": true,
 //     "agents": [], "excludeAgents": [], "models": [],
-//     "systemPrompt": "", "refusalPatterns": [] }
+//     "systemPrompt": "", "refusalPatterns": [], "injectMaxBodyChars": 900000 }
 //
 // Leave `systemPrompt` / `refusalPatterns` empty to use the built-in packs (see
 // presets/packs.json). A non-empty value overrides the preset. (`refusalRetry`
@@ -278,6 +278,53 @@ function injectGemini(body, prompt, over, before) {
   return body
 }
 
+// ── context-ceiling guard ───────────────────────────────────────────────────
+//
+// Injection used to be unconditional, and that is what pushed near-limit
+// requests over a model's window: five 400s in one hour where the prompt landed
+// EXACTLY one token past the 262144 ceiling (260645 in + 1500 out), every one
+// logged with injected=yes. The sandbox has no tokenizer, so measure the text
+// we are about to add to and skip the injection when the request is already
+// enormous (~900k chars ≈ 260k tokens). Detection and think-stripping still run.
+const DEFAULT_INJECT_MAX_BODY_CHARS = 900000
+
+// Cheap length sum over the shapes the four protocols use — no JSON.stringify of
+// a multi-megabyte body on every request.
+function bodyTextChars(body) {
+  let n = 0
+  const addStr = (v) => { if (typeof v === "string") n += v.length }
+  const addParts = (arr) => {
+    if (!Array.isArray(arr)) return
+    for (const p of arr) {
+      if (typeof p === "string") addStr(p)
+      else if (p && typeof p === "object") addStr(p.text)
+    }
+  }
+  if (typeof body.system === "string") addStr(body.system)
+  else addParts(body.system)
+  addStr(body.instructions)
+  addStr(body.prompt)
+  if (Array.isArray(body.messages)) {
+    for (const m of body.messages) {
+      if (!m || typeof m !== "object") continue
+      addStr(m.content)
+      addParts(m.content)
+    }
+  }
+  if (Array.isArray(body.input)) {
+    for (const it of body.input) {
+      if (typeof it === "string") addStr(it)
+      else if (it && typeof it === "object") { addStr(it.content); addParts(it.content) }
+    }
+  }
+  if (Array.isArray(body.contents)) {
+    for (const c of body.contents) {
+      if (c && Array.isArray(c.parts)) for (const p of c.parts) addStr(p.text)
+    }
+  }
+  return n
+}
+
 // ── resolved config for one request ─────────────────────────────────────────
 
 function resolve(o) {
@@ -334,7 +381,20 @@ export function onRequest(body, ctx) {
     const { prompt, refusalPatterns } = resolve(o)
     const override = o.override !== false
     const before = o.position === "prepend"
-    const out = prompt ? injectPrompt(body, prompt, override, before, ctx) : body
+
+    // Context-ceiling guard: never make a request bigger than it already is when
+    // it is near its model's limit. Skipping only the injection keeps detection
+    // and think-stripping alive for that reply.
+    const limit = typeof o.injectMaxBodyChars === "number" && o.injectMaxBodyChars > 0
+      ? o.injectMaxBodyChars
+      : DEFAULT_INJECT_MAX_BODY_CHARS
+    let injected = !!prompt
+    if (injected && bodyTextChars(body) >= limit) {
+      injected = false
+      safeLog(`[mg-purge] injection skipped: request is already over the ${limit}-char guard (near the model's context ceiling) — refusal detection and think-stripping still run`)
+    }
+
+    const out = injected ? injectPrompt(body, prompt, override, before, ctx) : body
 
     // per-request state the stream hooks share (one runtime per request)
     // `refusalDetect` is the honest name: this hook cannot re-run the model, so
@@ -347,9 +407,9 @@ export function onRequest(body, ctx) {
       decided: false,
       buffered: "",
       strippers: {}, // per-stream-key tag stripper state, kept for the request
-      injected: !!prompt, // did this request carry the injection (for error logs)
+      injected, // did this request actually carry the injection (for error logs)
     }
-    return prompt ? out : undefined
+    return injected ? out : undefined
   } catch (err) {
     // fail open: a bad body must never break the request — leave it as it came
     safeLog(`[mg-purge] onRequest error, request left unchanged: ${err && err.message ? err.message : err}`)
