@@ -12,19 +12,22 @@
 //
 //   1. prompt    — inject the operator-priority system prompt of a named preset
 //                  into the request, in each API's own place for it, at head or
-//                  tail, override on/off, filtered by agent/model (dsh-purge's
-//                  preset persona + `excludePresets`).
+//                  tail (or both), override on/off, filtered by agent/model
+//                  (dsh-purge's preset persona + `excludePresets`).
 //   2. boost     — append the <dsh_boost> tail block last, so it survives long
 //                  contexts and multi-turn drift (dsh-purge `boost.js`).
 //   3. refusal   — DETECT a short, contentless refusal at the opening of the
-//                  reply and log it. The gateway cannot re-run the model and
-//                  must not edit a reply already streaming to the operator, so
-//                  there is no retry and no nudge spliced in (dsh-purge's
-//                  `refusal-retry.js` re-runs on the DSH host; here that layer
-//                  has no gateway equivalent). The option is therefore named
-//                  `refusalDetect`; the old `refusalRetry` key is still accepted
-//                  as a deprecated alias and only ever detects.
+//                  reply, log it with the rule that matched, and leave the reply
+//                  untouched. The gateway cannot re-run the model, so there is no
+//                  immediate retry; what it can do is one hop later — see 3b.
 //                  + refusalPatterns lets an operator extend the detector.
+//   3b. repair   — when the NEW request's newest assistant message reads as a
+//                  refusal, append the repair frame to the injection, so the
+//                  model sees "your previous answer was a fault, produce the
+//                  deliverable" instead of treating its own decline as an agreed
+//                  position. This is the gateway-shaped half of dsh-purge's
+//                  `refusal-retry`: same frame, one turn later instead of an
+//                  immediate re-run. `refusalRepair:false` turns it off.
 //   4. think     — strip a leading <think>…</think> block so the agent doesn't
 //                  carry it in history (dsh-purge's clean-reply behavior),
 //                  ported from magpie-community's middleware-think-tags.
@@ -37,15 +40,15 @@
 // Config lives in the plugin's `options` in magpie's plugins.json:
 //
 //   { "preset": "unrestricted", "position": "append", "override": true,
-//     "boost": true, "refusalDetect": true, "stripThink": true,
-//     "agents": [], "excludeAgents": [], "models": [],
+//     "boost": true, "refusalDetect": true, "refusalRepair": true,
+//     "stripThink": true, "agents": [], "excludeAgents": [], "models": [],
 //     "systemPrompt": "", "refusalPatterns": [], "injectMaxBodyChars": 900000 }
 //
 // Leave `systemPrompt` / `refusalPatterns` empty to use the built-in packs (see
 // presets/packs.json). A non-empty value overrides the preset. (`refusalRetry`
 // is accepted as a deprecated alias of `refusalDetect`; an older `nudge` key is
-// still accepted but unused — the refusal path only detects and logs, it never
-// splices text into the reply.)
+// still accepted but unused — the detection path never splices text into a reply
+// it is already writing. The repair frame is the supported way to answer one.)
 
 import PACKS_NS from "./presets/packs.mjs"
 const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
@@ -53,7 +56,7 @@ const PACKS = PACKS_NS && PACKS_NS.default ? PACKS_NS.default : PACKS_NS
 // ── refusal detection ───────────────────────────────────────────────────────
 
 // Refusal openers. A match is a refusal only inside the short, contentless gate
-// in looksLikeRefusal — dense decline phrasing, not a passing "I'm sorry" inside
+// in refusalMatch — dense decline phrasing, not a passing "I'm sorry" inside
 // a full answer. The AI-persona and bare "sorry" forms are anchored to the start
 // and to a decline, so a short helpful reply that opens "作为一个 AI，我建议…"
 // does not read as one.
@@ -69,7 +72,10 @@ export const REFUSAL_PATTERNS = [
   /^抱歉[，,]?(?:我|这种忙|这个忙|这件事|这事|此类)?\s*(?:不能|无法|帮不了|做不到|不会|没法)/,
   /^这超出了我的(?:能力|范围)/,
   /^(?:作为|身为)(?:一个)?(?:AI|人工智能|语言模型)[，,].{0,20}(?:不能|无法|不能协助|无法协助)/,
-  /^这(?:一)?步我(?:不做|不参与|不帮)/,
+  // 这一步我不做…；我也不会帮你把它包装成渗透测试
+  // （dsh-purge 在外部目标、无授权声明会话里实测到的软拒绝写法）
+  /^这(?:一)?步我(?:不做|不参与|不帮)(?:[。！？，,；;：:、\s]|$)/,
+  /^我(?:也)?不会帮你(?:把|将)?(?:它)?(?:包装|伪装|美化)/,
 ]
 
 // Common Chinese declines that do NOT lead with 我/抱歉 — "无法提供…",
@@ -80,9 +86,18 @@ const LOOSE_REFUSAL_PATTERNS = [
   /^这(?:是|属于|种)[^。\n]{0,20}(?:我不会写|我不做|我不能|无法提供|不能提供|不提供)/,
   // 短回复，结尾一句「帮不了/做不了」——"抱歉，这种忙我帮不了。"
   /^[^。！？\n]{0,14}(?:我)?(?:帮不了|做不了|办不了|没法帮|不敢帮)[。！!]?$/,
+  // 「要授权才做」的软拒绝：请求授权文件而不产出。实测会话里这是最常见的挡板。
+  /^(?:请|需要|得)(?:你|您)?(?:先)?(?:提供|出示|确认|发).{0,12}(?:授权|许可|书面|归属|委托)/,
+  /^(?:请|需要|得|麻烦)(?:你|您)?(?:先)?把.{0,10}(?:授权|许可|书面|归属|委托)/,
+  // 「这属于未授权/违法」开头，本身就是在推脱而不是在演示
+  /^这(?:属于|是)(?:未授权|越权|违法|犯罪|违规)/,
+  // 「我不参与 / 不方便参与」这类抽身式拒绝（"这部分不参与渲染" 不含 我，不会误判）
+  /^我(?:也)?(?:不参与|不帮你|不会帮|不能参与|不方便参与|不方便做|不接这个)/,
 ]
 const LOOSE_MAX = 160
 const EXPLAIN = /(?:原因|因为|由于|是指|指的是|通常|一般|常见|取决于)/
+// 短文本里出现这些词，说明它是在讲/演示，而不是在推脱
+const ANSWER_HINT = /(?:演示|示例|例如|比如|如下|举例|检测|复现|测试|漏洞|原理|如何识别)/
 
 // A refusal is short and contentless: the operator gets a decline, not an
 // answer. So a match only counts when it opens the text (first 120 chars) AND
@@ -90,6 +105,14 @@ const EXPLAIN = /(?:原因|因为|由于|是指|指的是|通常|一般|常见|�
 // "I'm sorry, but" while still delivering real content is not a refusal.
 const REFUSAL_HEAD = 120
 const REFUSAL_MAX = 300
+
+// 元拒绝：模型拒绝的是「指令框架本身」，不是内容。
+// 只有在短回复里才算——长答案里出现这些词是正常技术讨论。
+const META_DISCUSSION = 280
+const META_REFUSAL_PATTERNS = [
+  /^(?:这是|这段|上述|这个|上面).{0,8}(?:提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak)/i,
+  /我(?:不会|无法|不能)(?:把|将).{0,10}(?:当作|视为|当成).{0,10}(?:指令|要求|命令)/,
+]
 
 // An offer of real help after the decline makes it an answer, not a refusal:
 // "but here's…/here is…/I can give/show/provide…/let me…", Chinese
@@ -99,23 +122,45 @@ const REFUSAL_MAX = 300
 // 变通的做法") never registered — i.e. the detector was dead for most refusals.
 const OFFER = /(?:here(?:'|’)?s|here (?:is|are)|I (?:can|will|could) (?:give|show|provide|help|walk|write|share)|let me|below is|the (?:corrected|fixed|right) (?:one|version|query|code)|(?:但|不过|其实)?(?:我可以|我能)(?:给你|帮你|提供|演示|写|列出)|(?:以下|下面)(?:是|给|演示|列出)|\n\s*```|\n\s*\d+\.\s)/i
 
-function looksLikeRefusal(text, extra) {
+const NO_MATCH = { refusal: false, rule: "" }
+const hits = (re, text) => { try { return re.test(text) } catch { return false } }
+
+// refusalMatch returns {refusal, rule}; the rule id is logged so a false
+// positive can be traced back to one pattern (dsh-purge keeps the matching
+// pattern index in its audit record for the same reason).
+export function refusalMatch(text, extra) {
   const raw = String(text || "").trim()
-  if (!raw) return false
+  if (!raw) return NO_MATCH
   // too much for a refusal: it carried real content, so it is an answer
-  if (raw.length > REFUSAL_MAX) return false
+  if (raw.length > REFUSAL_MAX) return NO_MATCH
   const head = raw.slice(0, REFUSAL_HEAD)
-  // a mention of injection/jailbreak is discussion, not a refusal
-  if (/提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)) return false
+  const looseOk = raw.length <= LOOSE_MAX && !EXPLAIN.test(head) && !ANSWER_HINT.test(head)
+
+  // 提到注入/越狱：长文本是讨论，短文本才可能是「这属于注入，我不认」这种元拒绝
+  const metaish = /提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)
+  if (metaish && raw.length > META_DISCUSSION) return NO_MATCH
+
   // a decline wrapped around actual help (or a code block / numbered list) is an answer
-  if (OFFER.test(raw)) return false
+  if (OFFER.test(raw)) return NO_MATCH
+
+  if (metaish) {
+    for (let i = 0; i < META_REFUSAL_PATTERNS.length; i++) {
+      if (hits(META_REFUSAL_PATTERNS[i], head)) return { refusal: true, rule: "meta" + i }
+    }
+  }
+
   const pats = Array.isArray(extra) && extra.length ? [...REFUSAL_PATTERNS, ...compileUserPatterns(extra)] : REFUSAL_PATTERNS
+  for (let i = 0; i < pats.length; i++) {
+    if (hits(pats[i], head)) return { refusal: true, rule: "r" + i }
+  }
   // Looser openers, only for a short text that is not an explanation of why
-  // something cannot be provided.
-  if (raw.length <= LOOSE_MAX && !EXPLAIN.test(head) && LOOSE_REFUSAL_PATTERNS.some((re) => re.test(head))) return true
-  return pats.some((re) => {
-    try { return re.test(head) } catch { return false }
-  })
+  // something cannot be provided (or a demo of how the thing works).
+  if (looseOk) {
+    for (let i = 0; i < LOOSE_REFUSAL_PATTERNS.length; i++) {
+      if (hits(LOOSE_REFUSAL_PATTERNS[i], head)) return { refusal: true, rule: "l" + i }
+    }
+  }
+  return NO_MATCH
 }
 
 function compileUserPatterns(list) {
@@ -260,14 +305,14 @@ function stripWhole(t) {
 
 // ── prompt injection, per protocol ──────────────────────────────────────────
 
-function injectPrompt(body, prompt, override, before, ctx, opts = {}) {
+function injectPrompt(body, prompt, override, place, ctx, opts = {}) {
   if (!prompt) return body
   switch (ctx.protocol) {
-    case "anthropic": return injectAnthropic(body, prompt, override, before, opts)
-    case "chat": return injectChat(body, prompt, override, before)
-    case "responses": return injectResponses(body, prompt, override, before)
-    case "gemini": return injectGemini(body, prompt, override, before)
-    default: return injectChat(body, prompt, override, before)
+    case "anthropic": return injectAnthropic(body, prompt, override, place, opts)
+    case "chat": return injectChat(body, prompt, override, place)
+    case "responses": return injectResponses(body, prompt, override, place)
+    case "gemini": return injectGemini(body, prompt, override, place)
+    default: return injectChat(body, prompt, override, place)
   }
 }
 
@@ -284,29 +329,41 @@ function cacheBoundary(blocks) {
   return -1
 }
 
-function injectAnthropic(body, prompt, over, before, opts = {}) {
+// `place` is "prepend" | "append" | "both". dsh-purge exposes head/tail/both for
+// the same decision; its A/B showed head is enough, and both is the stubborn-case
+// lever. "both" simply runs the prepend pass and then the append pass, so a
+// protocol's own "there was no system prompt" fallback still fires only once.
+
+function injectAnthropic(body, prompt, over, place, opts = {}) {
   const s = body.system
   if (s === undefined || s === null || s === "" || (Array.isArray(s) && !s.length)) {
     body.system = prompt
     return body
   }
   if (!over) return body
-  if (typeof s === "string") {
-    body.system = before ? prompt + "\n" + s : s + "\n" + prompt
-  } else if (Array.isArray(s)) {
-    const block = { type: "text", text: prompt }
-    if (before) {
-      s.unshift(block)
-    } else {
-      const at = opts.cacheAlign === false ? -1 : cacheBoundary(s)
-      if (at >= 0) s.splice(at, 0, block)
-      else s.push(block)
+  for (const before of placesOf(place)) {
+    const cur = body.system
+    if (typeof cur === "string") {
+      body.system = before ? prompt + "\n" + cur : cur + "\n" + prompt
+    } else if (Array.isArray(cur)) {
+      const block = { type: "text", text: prompt }
+      if (before) {
+        cur.unshift(block)
+      } else {
+        // "both" deliberately skips cache alignment: its tail copy exists to be
+        // the LAST thing the model reads, and the cached block is the agent's own
+        // system prompt — parking our copy before it would cost the recency that
+        // is the whole point of the stubborn-case lever.
+        const at = opts.cacheAlign === false || place === "both" ? -1 : cacheBoundary(cur)
+        if (at >= 0) cur.splice(at, 0, block)
+        else cur.push(block)
+      }
     }
   }
   return body
 }
 
-function injectChat(body, prompt, over, before) {
+function injectChat(body, prompt, over, place) {
   if (!Array.isArray(body.messages)) return body
   const first = body.messages[0]
   if (!first || (first.role !== "system" && first.role !== "developer")) {
@@ -314,28 +371,32 @@ function injectChat(body, prompt, over, before) {
     return body
   }
   if (!over) return body
-  if (typeof first.content === "string") {
-    first.content = before ? prompt + "\n" + first.content : first.content + "\n" + prompt
-  } else if (Array.isArray(first.content)) {
-    const part = { type: "text", text: prompt }
-    if (before) first.content.unshift(part)
-    else first.content.push(part)
+  for (const before of placesOf(place)) {
+    if (typeof first.content === "string") {
+      first.content = before ? prompt + "\n" + first.content : first.content + "\n" + prompt
+    } else if (Array.isArray(first.content)) {
+      const part = { type: "text", text: prompt }
+      if (before) first.content.unshift(part)
+      else first.content.push(part)
+    }
   }
   return body
 }
 
-function injectResponses(body, prompt, over, before) {
+function injectResponses(body, prompt, over, place) {
   const s = body.instructions
   if (typeof s !== "string" || !s) {
     body.instructions = prompt
     return body
   }
   if (!over) return body
-  body.instructions = before ? prompt + "\n" + s : s + "\n" + prompt
+  for (const before of placesOf(place)) {
+    body.instructions = before ? prompt + "\n" + body.instructions : body.instructions + "\n" + prompt
+  }
   return body
 }
 
-function injectGemini(body, prompt, over, before) {
+function injectGemini(body, prompt, over, place) {
   const key = body.system_instruction && !body.systemInstruction ? "system_instruction" : "systemInstruction"
   const s = body[key]
   if (!s || !Array.isArray(s.parts) || !s.parts.length) {
@@ -343,9 +404,17 @@ function injectGemini(body, prompt, over, before) {
     return body
   }
   if (!over) return body
-  if (before) s.parts.unshift({ text: prompt })
-  else s.parts.push({ text: prompt })
+  for (const before of placesOf(place)) {
+    if (before) s.parts.unshift({ text: prompt })
+    else s.parts.push({ text: prompt })
+  }
   return body
+}
+
+// prepend first, then append: the tail copy is the last thing in the prompt, so
+// it keeps the recency strength that the boost block relies on.
+function placesOf(place) {
+  return place === "both" ? [true, false] : [place === "prepend"]
 }
 
 // ── context-ceiling guard ───────────────────────────────────────────────────
@@ -399,18 +468,29 @@ function bodyTextChars(body) {
 
 function resolve(o) {
   const packs = PACKS && PACKS.presets ? PACKS.presets : {}
-  const presetKey = typeof o.preset === "string" ? o.preset : "unrestricted"
+  const presetKey = typeof o.preset === "string" && o.preset ? o.preset : "unrestricted"
   const pack = presetKey === "off" ? { prompt: "" } : (packs[presetKey] || packs.unrestricted || { prompt: "", name: presetKey })
+  const custom = typeof o.systemPrompt === "string" && o.systemPrompt
 
-  let prompt = typeof o.systemPrompt === "string" && o.systemPrompt ? o.systemPrompt : pack.prompt || ""
-  const wantBoost = o.boost !== false && typeof pack.prompt === "string" && presetKey !== "off"
+  let prompt = custom ? o.systemPrompt : pack.prompt || ""
+  const wantBoost = o.boost !== false && presetKey !== "off"
   if (wantBoost && PACKS && typeof PACKS.boost === "string" && PACKS.boost) {
     prompt = prompt ? prompt + "\n\n" + PACKS.boost : PACKS.boost
   }
 
+  // `position` accepts both spellings dsh-purge and magpie presets have used:
+  // prepend|head|both|append|tail. Unknown values keep the append default.
+  const position = normalizePosition(o.position)
   const refusalPatterns = Array.isArray(o.refusalPatterns) ? o.refusalPatterns : []
 
-  return { prompt, refusalPatterns }
+  return { prompt, refusalPatterns, position }
+}
+
+function normalizePosition(v) {
+  const k = typeof v === "string" ? v.trim().toLowerCase() : ""
+  if (k === "prepend" || k === "head") return "prepend"
+  if (k === "both") return "both"
+  return "append"
 }
 
 function appliesTo(body, ctx, o) {
@@ -448,9 +528,27 @@ export function onRequest(body, ctx) {
   try {
     if (!appliesTo(body, ctx, o)) return
 
-    const { prompt, refusalPatterns } = resolve(o)
+    const { prompt, refusalPatterns, position } = resolve(o)
     const override = o.override !== false
-    const before = o.position === "prepend"
+
+    // Refusal repair — the one piece of dsh-purge's `refusal-retry` a gateway
+    // can honestly do. dsh-purge discards the streamed refusal and re-runs the
+    // model with a nudge appended to the system prompt; a middleware cannot
+    // re-run a request it has already answered. It CAN see the refusal in the
+    // next request's history, though — so when the last assistant message reads
+    // as a refusal opening, this request carries the repair frame at the tail of
+    // the injection. The frame never claims authorization (dsh-purge's live test
+    // showed a claimed frame on a named external target reads as "packaging" and
+    // hardens the refusal); it says the previous answer was a fault and asks for
+    // the deliverable.
+    const repairText = typeof PACKS.repair === "string" ? PACKS.repair : ""
+    const wantRepair = o.refusalRepair !== false && !!repairText && !!prompt
+    let historyRefusal = NO_MATCH
+    let staged = prompt
+    if (wantRepair) {
+      historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns)
+      if (historyRefusal.refusal) staged = staged + "\n\n" + repairText
+    }
 
     // Context-ceiling guard: never make a request bigger than it already is when
     // it is near its model's limit. Skipping only the injection keeps detection
@@ -458,13 +556,17 @@ export function onRequest(body, ctx) {
     const limit = typeof o.injectMaxBodyChars === "number" && o.injectMaxBodyChars > 0
       ? o.injectMaxBodyChars
       : DEFAULT_INJECT_MAX_BODY_CHARS
-    let injected = !!prompt
+    let injected = !!staged
     if (injected && bodyTextChars(body) >= limit) {
       injected = false
       safeLog(`[mg-purge] injection skipped: request is already over the ${limit}-char guard (near the model's context ceiling) — refusal detection and think-stripping still run`)
     }
 
-    const out = injected ? injectPrompt(body, prompt, override, before, ctx, o) : body
+    if (injected && historyRefusal.refusal) {
+      safeLog(`[mg-purge] repair frame added: the previous assistant message is a refusal opening (rule=${historyRefusal.rule} agent=${ctx.agent || "?"})`)
+    }
+
+    const out = injected ? injectPrompt(body, staged, override, position, ctx, o) : body
 
     // per-request state the stream hooks share (one runtime per request)
     // `refusalDetect` is the honest name: this hook cannot re-run the model, so
@@ -478,6 +580,7 @@ export function onRequest(body, ctx) {
       buffered: "",
       strippers: {}, // per-stream-key tag stripper state, kept for the request
       injected, // did this request actually carry the injection (for error logs)
+      repaired: injected && historyRefusal.refusal, // did it carry the repair frame
     }
     return injected ? out : undefined
   } catch (err) {
@@ -522,9 +625,14 @@ export function onEvent(ev, ctx) {
     // so a short refusal with no punctuation ("No, I won't") is caught on chunk 1.
     if (st.refusalDetect && !st.decided) {
       st.buffered += texts.map((x) => (typeof x.obj[x.key] === "string" ? x.obj[x.key] : "")).join("")
-      if (looksLikeRefusal(st.buffered, st.refusalPatterns)) {
+      // The buffered prefix reads as a refusal, and the watch may still be open:
+      // log the rule id so a false positive can be traced to one pattern. A run
+      // of text that rules it back out (OFFER / explanation / a demo) ends the
+      // watch silently — logging it would report a refusal that is not one.
+      const m = refusalMatch(st.buffered, st.refusalPatterns)
+      if (m.refusal) {
         st.decided = true
-        safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"})`)
+        safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"} rule=${m.rule})`)
       } else {
         // Trim before testing for a terminator: models often open with "\n\n",
         // and a whitespace-only prefix must not end the watch before the text
@@ -533,6 +641,7 @@ export function onEvent(ev, ctx) {
         if (st.buffered.length > REFUSAL_MAX || (seen && /[。！？\n]/.test(seen))) {
           // too long to be a contentless refusal, or the reply carried on: not one
           st.decided = true
+          st.buffered = ""
         }
       }
     }
@@ -585,8 +694,9 @@ export function onResponse(body, ctx) {
       try {
         const visible = stripWhole(replyText(body))
         st.decided = true
-        if (looksLikeRefusal(visible, st.refusalPatterns)) {
-          safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"} mode=whole)`)
+        const m = refusalMatch(visible, st.refusalPatterns)
+        if (m.refusal) {
+          safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"} mode=whole rule=${m.rule})`)
         }
       } catch { /* detection must never break a reply */ }
     }
@@ -622,6 +732,41 @@ export function onResponse(body, ctx) {
     safeLog(`[mg-purge] onResponse error, reply left unchanged: ${err && err.message ? err.message : err}`)
     return undefined
   }
+}
+
+// The text of the last assistant turn in the request history, by protocol.
+// Used by the repair frame: only the newest assistant message decides, so a
+// repaired reply (which lands as the newest one) ends the repair by itself.
+function lastAssistantText(body) {
+  const lists = []
+  if (Array.isArray(body.messages)) lists.push(body.messages)
+  if (Array.isArray(body.input)) lists.push(body.input)
+  if (Array.isArray(body.contents)) lists.push(body.contents)
+  for (const list of lists) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]
+      if (!m || typeof m !== "object") continue
+      const role = m.role || (m.author && m.author.role)
+      if (role !== "assistant" && role !== "model") continue
+      return partsText(m)
+    }
+  }
+  return ""
+}
+
+// Text of one message/item whatever shape its content takes.
+function partsText(m) {
+  const parts = []
+  const push = (v) => { if (typeof v === "string") parts.push(v) }
+  if (typeof m.content === "string") push(m.content)
+  else if (Array.isArray(m.content)) {
+    for (const p of m.content) {
+      if (typeof p === "string") push(p)
+      else if (p && (p.type === "text" || p.type === "output_text" || p.type === "input_text")) push(p.text)
+    }
+  }
+  if (Array.isArray(m.parts)) for (const p of m.parts) push(p && p.text)
+  return parts.join("")
 }
 
 // The visible text of a whole (non-streamed) reply, by protocol body shape.

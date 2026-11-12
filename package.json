@@ -1,7 +1,7 @@
 {
   "name": "mg-purge",
-  "version": "0.6.13",
-  "description": "破甲 (purge) for magpie: dsh-purge's prompt-injection layer as a magpie gateway middleware, with a dashboard page and a Usage panel — operator-priority system prompt (presets), a concise boost tail block, refusal detection (logged, reply never altered), thinking-tag stripping, live parameter tuning.",
+  "version": "0.7.0",
+  "description": "破甲 (purge) for magpie: dsh-purge's gateway-reachable layers as a magpie middleware — operator-priority preset prompt, the <dsh_boost> tail block, refusal detection (with the matching rule id logged), a repair frame that answers a refusal in history, thinking-tag stripping, head/tail/both injection, live parameter tuning.",
   "type": "module",
   "files": [
     "mg-purge.middleware.js",
@@ -69,6 +69,7 @@
       "override": true,
       "boost": false,
       "refusalDetect": true,
+      "refusalRepair": true,
       "stripThink": true,
       "agents": [],
       "excludeAgents": [],
@@ -80,6 +81,7 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "test:bun": "node --test tests/cases.test.mjs"
+    "test:bun": "node --test tests/cases.test.mjs",
+    "gen:packs": "node scripts/gen-packs.mjs"
   }
 }

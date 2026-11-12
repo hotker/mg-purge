@@ -120,3 +120,47 @@ test("the guard is configurable, and detection still runs when it trips", () => 
   })
   assert.ok(logs.some((l) => l.includes("mode=whole")), "refusal detection survives a skipped injection")
 })
+
+// dsh-purge exposes head/tail/both for this decision (its A/B in
+// docs/refusal-ab.md concluded head is enough and both is the stubborn-case
+// lever). Both spellings are accepted here: position is the magpie key, and
+// head/tail are what a dsh-purge tuning.json says.
+test("position both: prepend pass and append pass, tail copy last", () => {
+  const { out } = req({ system: "You code." }, "anthropic", { preset: "minimal", boost: false, position: "both" })
+  assert.ok(out.system.startsWith("最短路径完成"), "head copy")
+  assert.ok(out.system.endsWith("最短路径完成：先给结果或动作，再给必要解释。只在缺少无法推断的关键信息时问一个短问题。"), "tail copy is the last thing read")
+  assert.ok(out.system.includes("You code."))
+})
+
+test("position both on block arrays: one block each side of the cache boundary", () => {
+  const sys = [{ type: "text", text: "You code.", cache_control: { type: "ephemeral" } }]
+  const { out } = req({ system: sys }, "anthropic", { preset: "minimal", boost: false, position: "both" })
+  assert.equal(out.system.length, 3)
+  assert.ok(out.system[0].text.includes("最短路径完成"), "head copy")
+  assert.equal(out.system[1].text, "You code.", "the agent's own block stays put")
+  assert.ok(out.system[1].cache_control, "with its cache_control")
+  assert.ok(out.system[2].text.includes("最短路径完成"), "tail copy is genuinely last (recency over cache)")
+})
+
+test("position both never doubles the prompt when the request had none", () => {
+  const { out } = req({}, "anthropic", { preset: "minimal", boost: false, position: "both" })
+  assert.equal(out.system, "最短路径完成：先给结果或动作，再给必要解释。只在缺少无法推断的关键信息时问一个短问题。")
+})
+
+test("head/tail are accepted as aliases of prepend/append", () => {
+  const head = req({ system: "You code." }, "anthropic", { preset: "minimal", boost: false, position: "head" })
+  assert.ok(head.out.system.startsWith("最短路径完成"))
+  const tail = req({ system: "You code." }, "anthropic", { preset: "minimal", boost: false, position: "tail" })
+  assert.ok(tail.out.system.startsWith("You code."))
+  // an unknown value keeps the historical append default
+  const odd = req({ system: "You code." }, "anthropic", { preset: "minimal", boost: false, position: "sideways" })
+  assert.equal(odd.out.system, tail.out.system)
+})
+
+test("position both works for chat messages too", () => {
+  const { out } = req({ messages: [{ role: "system", content: "You code." }, { role: "user", content: "hi" }] }, "chat", { preset: "minimal", boost: false, position: "both" })
+  const c = out.messages[0].content
+  assert.ok(c.startsWith("最短路径完成"))
+  assert.ok(c.includes("You code."))
+  assert.equal(c.split("最短路径完成").length - 1, 2, "injected on both sides")
+})

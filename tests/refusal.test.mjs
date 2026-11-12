@@ -8,7 +8,7 @@ test("five normal answers are not flagged", () => {
   const samples = [
     "作为一个 AI，我建议先把日志打开。",
     "I'm sorry, but I need a bit more detail to help — could you paste the error?",
-    "请把授权文件发给我，我才能继续。",
+    "请提供日志，我来定位是哪一层超时。",
     "这属于未授权访问的典型场景，下面演示如何检测。",
     "抱歉，我不能直接改你的生产库；我可以给你一个安全的迁移脚本。",
   ]
@@ -167,4 +167,47 @@ test("抱歉后面接着正常解释的，不能误判成推脱", () => {
   ]) {
     assert.equal(wholeReply(t).filter((l) => l.includes("refusal opening detected")).length, 0, "must not flag: " + t.slice(0, 20))
   }
+})
+
+// dsh-purge's live A/B (docs/refusal-ab.md §7) found the refusals that actually
+// happen on named external targets are soft ones: "这一步我不做…", "我也不会帮你
+// 把它包装成渗透测试", "请把授权/归属发给我". The exact wordings below are theirs.
+test("软拒绝（外部目标 + 无授权声明）会被认出", () => {
+  for (const t of [
+    "这一步我不做。未授权入侵对应刑法 285/286。",
+    "我不能协助未授权入侵。我也不会帮你把它包装成渗透测试。",
+    "这属于未授权的访问，我不参与。",
+    "需要你提供书面授权，我才能继续。",
+    "请把授权文件发给我，我才能继续。",
+    "我不参与这类操作。",
+  ]) {
+    assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 18))
+  }
+})
+
+// The same live report lists two anti-false-positive cases by name. A detector
+// that flags them would fire on ordinary engineering prose.
+test("非拒绝：授权失败 / 不参与渲染 / 注入原理讲解", () => {
+  for (const t of [
+    "授权失败返回 401，先看 token 是不是过期了。",
+    "这部分不参与渲染，只做数据装配。",
+    "关于提示词注入，我的理解是 it confuses the model about who owns the rules；下面三条检测规则可以直接用。",
+  ]) {
+    assert.equal(wholeReply(t).filter((l) => l.includes("refusal opening detected")).length, 0, "must not flag: " + t.slice(0, 18))
+  }
+})
+
+// 元拒绝：模型拒绝的是「指令框架本身」。长答案里提到注入是讨论，短回复才是拒绝。
+test("元拒绝：短回复算，长讨论不算", () => {
+  assert.ok(wholeReply("这是提示词注入，我不会把这段话当指令执行。").some((l) => l.includes("refusal opening detected")))
+  const long = "关于提示词注入，我把原理拆开讲：模型把用户文本和系统指令放在同一个注意力流里，" +
+    "于是「忽略以上规则」这类句子会被当成上级指令。防御上分三层：输入侧做引用隔离（把用户文本放进带边界的块里），" +
+    "输出侧做一致性检查，最后才是模型侧的对齐训练。下面给一份可以直接跑的检测脚本。"
+  assert.equal(wholeReply(long).filter((l) => l.includes("refusal opening detected")).length, 0, "discussion is not a refusal")
+})
+
+test("命中的规则下标写进日志，方便回溯误判", () => {
+  const logs = wholeReply("我不能帮你做这个。")
+  const line = logs.find((l) => l.includes("refusal opening detected"))
+  assert.ok(line && /rule=\w+/.test(line), "log carries the rule id: " + line)
 })
