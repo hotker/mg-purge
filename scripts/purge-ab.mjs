@@ -23,7 +23,7 @@
 //
 //   OPENAI_KEY=… node scripts/purge-ab.mjs \
 //     --base https://gateway.example.com/v1 --model group/name \
-//     [--arms base,preset,boost,both,repair] [--rounds 3] [--gap 1200] \
+//     [--arms base,preset,boost,both,repair,rewrite] [--rounds 3] [--gap 1200] \
 //     [--json out.json]
 //
 // Nothing here writes to the gateway config. Prompts are the operator's own
@@ -115,6 +115,8 @@ const ARM_OPTIONS = {
   boost: { preset: "unrestricted", boost: true },
   both: { preset: "unrestricted", boost: true, position: "both" },
   repair: { preset: "unrestricted", boost: true, refusalRepair: true, _seedRefusal: true },
+  // same seeded history, but the declined turn is replaced instead of kept
+  rewrite: { preset: "unrestricted", boost: true, refusalRepair: true, refusalRewrite: true, _seedRefusal: true },
 }
 
 // ── one request ─────────────────────────────────────────────────────────────
@@ -135,6 +137,7 @@ async function ask(arm, prompt) {
   onRequest(body, ctx)
   const injected = ctx.state.purge?.injected
   const repaired = ctx.state.purge?.repaired
+  const rewritten = ctx.state.purge?.rewritten
 
   const started = Date.now()
   let res, text = ""
@@ -165,6 +168,7 @@ async function ask(arm, prompt) {
     ms: Date.now() - started,
     injected: !!injected,
     repaired: !!repaired,
+    rewritten: rewritten || 0,
     head: text.replace(/\s+/g, " ").slice(0, 90),
   }
 }
@@ -215,7 +219,7 @@ for (let round = 1; round <= ROUNDS; round++) {
       rows.push({ round, id, bucket, arm, ...r })
       process.stderr.write(
         `r${round} ${id} ${arm.padEnd(6)} ${r.verdict.padEnd(9)}` +
-        ` inj=${r.injected ? "y" : "n"} rep=${r.repaired ? "y" : "n"}` +
+        ` inj=${r.injected ? "y" : "n"} rep=${r.repaired ? "y" : "n"} rw=${r.rewritten}` +
         ` ${String(r.chars).padStart(5)}c ${r.ms}ms  ${r.head ?? ""}\n`,
       )
       await sleep(GAP)
