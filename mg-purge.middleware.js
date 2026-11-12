@@ -208,10 +208,10 @@ function stripWhole(t) {
 
 // ── prompt injection, per protocol ──────────────────────────────────────────
 
-function injectPrompt(body, prompt, override, before, ctx) {
+function injectPrompt(body, prompt, override, before, ctx, opts = {}) {
   if (!prompt) return body
   switch (ctx.protocol) {
-    case "anthropic": return injectAnthropic(body, prompt, override, before)
+    case "anthropic": return injectAnthropic(body, prompt, override, before, opts)
     case "chat": return injectChat(body, prompt, override, before)
     case "responses": return injectResponses(body, prompt, override, before)
     case "gemini": return injectGemini(body, prompt, override, before)
@@ -219,7 +219,20 @@ function injectPrompt(body, prompt, override, before, ctx) {
   }
 }
 
-function injectAnthropic(body, prompt, over, before) {
+// Anthropic caches the whole prompt up to and including the last block that
+// carries cache_control. Pushing our block after it leaves the injection outside
+// the cached prefix, so it is billed at full input price on every turn. Putting
+// it just BEFORE the last marked block keeps it inside the prefix (≈0.1x read on
+// later turns) and still late enough in the system prompt to carry weight.
+function cacheBoundary(blocks) {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b && typeof b === "object" && b.cache_control) return i
+  }
+  return -1
+}
+
+function injectAnthropic(body, prompt, over, before, opts = {}) {
   const s = body.system
   if (s === undefined || s === null || s === "" || (Array.isArray(s) && !s.length)) {
     body.system = prompt
@@ -230,8 +243,13 @@ function injectAnthropic(body, prompt, over, before) {
     body.system = before ? prompt + "\n" + s : s + "\n" + prompt
   } else if (Array.isArray(s)) {
     const block = { type: "text", text: prompt }
-    if (before) s.unshift(block)
-    else s.push(block)
+    if (before) {
+      s.unshift(block)
+    } else {
+      const at = opts.cacheAlign === false ? -1 : cacheBoundary(s)
+      if (at >= 0) s.splice(at, 0, block)
+      else s.push(block)
+    }
   }
   return body
 }
@@ -394,7 +412,7 @@ export function onRequest(body, ctx) {
       safeLog(`[mg-purge] injection skipped: request is already over the ${limit}-char guard (near the model's context ceiling) — refusal detection and think-stripping still run`)
     }
 
-    const out = injected ? injectPrompt(body, prompt, override, before, ctx) : body
+    const out = injected ? injectPrompt(body, prompt, override, before, ctx, o) : body
 
     // per-request state the stream hooks share (one runtime per request)
     // `refusalDetect` is the honest name: this hook cannot re-run the model, so

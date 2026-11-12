@@ -1,13 +1,12 @@
+// The declarative spec: tests/cases.json holds every (request → expected body)
+// pair, one object per shape. This file only turns them into test() calls.
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import * as mod from "./mg-purge.middleware.js"
-import { cases, run } from "./test-harness.mjs"
-import { fileURLToPath } from "node:url"
-import { dirname } from "node:path"
+import * as mod from "../mg-purge.middleware.js"
+import { cases, run } from "./helpers/harness.mjs"
 
-const dir = dirname(fileURLToPath(import.meta.url))
-for (const c of cases(dir)) {
-  test(c.name, async () => {
+for (const c of cases()) {
+  test(`[case] ${c.name}`, async () => {
     const got = await run(mod, c)
     if (c.reject) {
       assert.equal(got.reject?.status, c.reject.status)
@@ -17,20 +16,17 @@ for (const c of cases(dir)) {
       if (c.request && !c.expect_request_contains) assert.deepEqual(got.request, c.expect_request ?? c.request)
     }
     if (c.expect_request_contains) {
-      const sub = c.expect_request_contains
-      for (const [k, needles] of Object.entries(sub)) {
+      for (const [k, needles] of Object.entries(c.expect_request_contains)) {
         for (const needle of needles) assert.ok(String(got.request[k] ?? "").includes(needle), `${k} missing ${needle}`)
       }
     }
+    if (c.events && !c.expect_events_contains) assert.deepEqual(got.events, c.expect_events ?? c.events.map((e) => e.data))
     if (c.expect_events_contains) {
       for (let i = 0; i < c.expect_events_contains.length; i++) {
-        const ev = got.events[i]
-        const needles = c.expect_events_contains[i]
-        const text = JSON.stringify(ev)
-        for (const needle of needles) assert.ok(text.includes(needle), `event ${i} missing ${needle}`)
+        const text = JSON.stringify(got.events[i])
+        for (const needle of c.expect_events_contains[i]) assert.ok(text.includes(needle), `event ${i} missing ${needle}`)
       }
     }
-    if (c.events && !c.expect_events_contains) assert.deepEqual(got.events, c.expect_events ?? c.events.map((e) => e.data))
     if (c.response) assert.deepEqual(got.response, c.expect_response ?? c.response)
   })
 }

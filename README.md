@@ -66,7 +66,8 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 ```
 
 - **`preset`** — `unrestricted`（默认）/ `redteam` / `coherence` / `minimal` / `off`。`coherence` 面向正常开发：让 agent 把已授权、目标明确的任务一次做完、少反复确认、被拒先换路，适合日常写代码/运维。`off` 只做 think 剥离与拒绝检测。预设文案见 [`presets/packs.json`](presets/packs.json)。
-- **`position`** — `append`（默认，保住 agent 自己的 prompt cache）或 `prepend`。
+- **`position`** — `append`（默认，尽量晚、但仍落在缓存断点之前）或 `prepend`（最靠前）。Anthropic 的 `system` 是块数组且某块带 `cache_control` 时，`append` 会把注入块插在**最后一个带 `cache_control` 的块之前**——这样注入文本在缓存前缀里（后续每轮 ≈0.1x 读），又比放在最前面更靠后。
+- **`cacheAlign`** — `true`（默认）。设 `false` 可以退回旧行为：`append` 时把注入块直接 push 到块数组末尾（在缓存断点之后，注入文本每轮按全价计费）。只有在你的模型/上游对块顺序有特殊要求时才关。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。
 - **`boost`** — `false`（默认）。设 `true` 追加 `<dsh_boost>` 尾部强化段（约 900 字符）。
 - **`refusalDetect`** — `true`（默认）。检测回复开头是否有「短、无实质内容」的推脱，命中时写一行日志 `[mg-purge] refusal opening detected`，**不修改回复正文**。判定条件：命中须在开头 120 字内、整段 < 300 字、且未附带实际内容（代码块、编号步骤、「我可以给你 / here's / 下面」等）。
@@ -93,6 +94,22 @@ mg-purge 不记录 prompt、也不记录任何密钥。以下两类诊断写入 
 
 - 命中拒绝检测：`[mg-purge] refusal opening detected (agent=… model=…)`
 - 非 2xx 回复：`[mg-purge] error <status> protocol=… agent=… reqModel=… replyModel=… injected=… errType=…`
+
+## 测试
+
+```sh
+npm test        # node --test tests/*.test.mjs
+```
+
+一个文件管一件事，改哪块跑哪块：
+
+- `tests/cases.json` — 声明式规格：每个 `(请求 → 期望 body)` 一个对象，`cases.test.mjs` 逐条跑。
+- `tests/inject.test.mjs` — 四协议落点、`override` / `position` / `cacheAlign`、上下文守卫。
+- `tests/refusal.test.mjs` — 拒绝检测的召回与精度、流式与整包两条路径、`refusalDetect` / 旧别名。
+- `tests/think.test.mjs` — think 剥离（含跨 chunk 拆分的标签、gemini parts）。
+- `tests/options.test.mjs` — `agents` / `excludeAgents` / `models` 过滤、失败开放。
+- `tests/errors.test.mjs` — 错误诊断日志、A/B 取址。
+- `tests/helpers/` — `harness.mjs`（按网关调用顺序跑一条 case）、`kit.mjs`（`withLog` / `reqCtx` / `detect` / `wholeReply` 等夹具）。
 
 ## 收录到 magpie Discover
 

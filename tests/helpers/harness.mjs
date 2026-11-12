@@ -1,10 +1,14 @@
 // A Node-only stand-in for magpie-community's scripts/middleware.mjs, so the
 // cases run without Bun. Same call order the gateway uses.
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
-export function cases(dir) {
-  return JSON.parse(readFileSync(join(dir, "cases.json"), "utf8"))
+const here = dirname(fileURLToPath(import.meta.url))
+
+/** The spec cases live next to this harness's parent: tests/cases.json */
+export function cases() {
+  return JSON.parse(readFileSync(join(here, "..", "cases.json"), "utf8"))
 }
 
 export async function run(mod, c) {
