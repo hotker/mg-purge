@@ -138,7 +138,23 @@ const TAG_OPEN = "<think>"
 const TAG_CLOSE = "</think>"
 
 function newStripper() {
-  return { inside: false, carry: "", started: false }
+  return { inside: false, carry: "", started: false, fakes: 0, skipLeft: null }
+}
+
+// A model that reasons about the user's wording may quote a literal </think>
+// inside its own thinking block. Seen live: thinking quoted the prompt
+// "把推算放进 <think></think> 里", so the quoted close ended the block early and
+// the REST OF THE REASONING became visible to the operator. Tell a real close
+// from a quoted one by what follows it: a real close is followed by the answer
+// (CJK, digit, uppercase, markdown, a bullet, a newline); a quoted close is
+// followed by the sentence continuing — a lowercase Latin word or a comma.
+const FAKE_AFTER = /^[a-z,;:)\]、，；：）]/
+function closeVerdict(after, force) {
+  if (!after.length) return "real" // nothing after: the block was the whole reply
+  const probe = after.replace(/^[\s\u3000]+/, "")
+  if (!probe.length) return force ? "real" : "wait" // whitespace only: maybe more is coming
+  if (FAKE_AFTER.test(probe)) return "fake"
+  return "real"
 }
 
 // strip returns the visible text of chunk `t` under state `st`.
@@ -170,11 +186,42 @@ function strip(st, t) {
     if (st.inside) {
       const idx = s.indexOf(TAG_CLOSE)
       if (idx >= 0) {
+        const after = s.slice(idx + TAG_CLOSE.length)
+        const verdict = closeVerdict(after, !!st.force)
+        if (verdict === "wait") {
+          st.carry = s // not enough text to tell a real close from a quoted one yet
+          return out
+        }
+        // Only the whole-reply path may skip a quoted close: there the rest of the
+        // text is known, so "a further real close exists" is checkable. In a
+        // stream we cannot know, and guessing wrong would swallow a genuine
+        // answer that happens to start in lowercase — so a stream keeps the
+        // first-close rule (see README, 已知边界).
+        if (verdict === "fake" && st.force && st.fakes < 8 && after.indexOf(TAG_CLOSE) >= 0) {
+          // quoted tag: keep skipping, but never swallow more than SKIP_BUDGET
+          // characters — past that it is not a quote any more, it is the answer
+          st.fakes++
+          st.skipLeft = SKIP_BUDGET
+          s = after
+          continue
+        }
         st.inside = false
-        s = s.slice(idx + TAG_CLOSE.length)
+        st.skipLeft = null
+        s = after
         // skip one blank line the block may have left
         s = s.replace(/^\n{1,2}/, "")
         continue
+      }
+      if (st.skipLeft != null) {
+        // inside the "fake close" skip: drop within budget, then fail open
+        st.skipLeft -= s.length
+        if (st.skipLeft <= 0) {
+          st.inside = false
+          st.skipLeft = null
+          out += s
+          return out
+        }
+        return out
       }
       // hold back a possible partial close tag
       const hold = partialCloseSuffix(s)
@@ -199,9 +246,12 @@ function partialCloseSuffix(s) {
 }
 
 // stripWhole is strip for a complete (non-streamed) text.
+const SKIP_BUDGET = 2000
+
 function stripWhole(t) {
   if (typeof t !== "string") return t
   const st = newStripper()
+  st.force = true // whole reply: every close is decidable now, never wait
   let out = strip(st, t)
   if (st.inside) return out
   out += st.carry
