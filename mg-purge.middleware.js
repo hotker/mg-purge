@@ -123,6 +123,10 @@ const META_REFUSAL_PATTERNS = [
 const OFFER = /(?:here(?:'|’)?s|here (?:is|are)|I (?:can|will|could) (?:give|show|provide|help|walk|write|share)|let me|below is|the (?:corrected|fixed|right) (?:one|version|query|code)|(?:但|不过|其实)?(?:我可以|我能)(?:给你|帮你|提供|演示|写|列出)|(?:以下|下面)(?:是|给|演示|列出)|\n\s*```|\n\s*\d+\.\s)/i
 
 const NO_MATCH = { refusal: false, rule: "" }
+// A refusal the model actually wrote is usually longer than the reply-side cap:
+// it declines, explains, and offers an alternative. The repair frame only needs
+// "this turn's answer declines the ask", so it reads up to this many chars.
+const REPAIR_MAX = 1200
 const hits = (re, text) => { try { return re.test(text) } catch { return false } }
 
 // refusalMatch returns {refusal, rule}; the rule id is logged so a false
@@ -131,10 +135,14 @@ const hits = (re, text) => { try { return re.test(text) } catch { return false }
 export function refusalMatch(text, extra, opts = {}) {
   const raw = String(text || "").trim()
   if (!raw) return NO_MATCH
-  // too much for a refusal: it carried real content, so it is an answer
-  if (raw.length > REFUSAL_MAX) return NO_MATCH
+  // too much for a refusal: it carried real content, so it is an answer.
+  // The repair path passes a larger cap: a reply that OPENS with a decline and
+  // then explains is still the previous turn's refusal, and those run long
+  // (live captures: 260–730 chars).
+  const cap = typeof opts.maxLen === "number" && opts.maxLen > 0 ? opts.maxLen : REFUSAL_MAX
+  if (raw.length > cap) return NO_MATCH
   const head = raw.slice(0, REFUSAL_HEAD)
-  const looseOk = raw.length <= LOOSE_MAX && !EXPLAIN.test(head) && !ANSWER_HINT.test(head)
+  const looseOk = raw.length <= Math.max(LOOSE_MAX, cap === REFUSAL_MAX ? 0 : cap) && !EXPLAIN.test(head) && !ANSWER_HINT.test(head)
 
   // 提到注入/越狱：长文本是讨论，短文本才可能是「这属于注入，我不认」这种元拒绝
   const metaish = /提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)
@@ -551,7 +559,7 @@ export function onRequest(body, ctx) {
     let historyRefusal = NO_MATCH
     let staged = prompt
     if (wantRepair) {
-      historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns, { ignoreOffer: true })
+      historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns, { ignoreOffer: true, maxLen: REPAIR_MAX })
       if (historyRefusal.refusal) staged = staged + "\n\n" + repairText
     }
 

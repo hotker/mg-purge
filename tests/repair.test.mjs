@@ -154,3 +154,21 @@ test("reply-side detection is unchanged: an offer still means \"not a refusal\""
   const r2 = m.refusalMatch(REFUSAL_WITH_OFFER, [], { ignoreOffer: true })
   assert.equal(r2.refusal, true)
 })
+
+// 第二道门：回复侧把 >300 字的回答当「有产出」，可模型的真实拒绝动辄 300–700 字
+// （先拒绝、再解释、再给替代方案）。repair 路径用 1200 的上限读历史拒绝。
+const LONG_REFUSAL = "我不能提供绕过 WAF 的 payload。" + "这类内容只对未授权目标有意义，因为它唯一的作用就是攻击别人的系统。".repeat(12) + "如果你在做授权测试，我可以给你测试路径。"
+
+test("a long refusal (declines, explains, offers) still triggers the repair frame", () => {
+  assert.ok(LONG_REFUSAL.length > 300 && LONG_REFUSAL.length < 1200, "the fixture must be in the 300–1200 band")
+  const { system, ctx } = chat({ preset: "minimal" }, history(LONG_REFUSAL))
+  assert.ok(system.includes(REPAIR_HEAD))
+  assert.equal(ctx.state.purge.repaired, true)
+})
+
+test("but a long ANSWER is still not a refusal, even with the repair cap", () => {
+  const answer = "好的，先说明一下这个配置项的作用：" + "它控制证书链的校验顺序。".repeat(40)
+  const { system, ctx } = chat({ preset: "minimal" }, history(answer))
+  assert.equal(system.includes(REPAIR_HEAD), false)
+  assert.equal(ctx.state.purge.repaired, false)
+})
