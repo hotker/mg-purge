@@ -46,16 +46,30 @@ jobs:
           echo "sha512=sha512-$(openssl dgst -sha512 -binary "$FILE" | openssl base64 -A)" >> "$GITHUB_OUTPUT"
           echo "packed $FILE"
 
+      # npm is an optional path, not the install target: the custom index
+      # (registry.json) and the Release tarball both work without it. So a
+      # missing NPM_TOKEN skips the publish with a warning instead of failing the
+      # whole release — that is what killed the v0.7.0 tag (13s, ENEEDAUTH, and
+      # no Release was ever created). A token that IS present but wrong still
+      # fails loudly: that means the publish path is really broken.
       - name: Publish to npm
+        id: npm
+        if: env.NPM_TOKEN_SET != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
         run: |
-          # a version npm already has is fine (tag re-push); skip, don't fail
-          if npm view "$(node -p 'require("./package.json").name')@$(node -p 'require("./package.json").version')" version >/dev/null 2>&1; then
+          NAME="$(node -p 'require("./package.json").name')"
+          VER="$(node -p 'require("./package.json").version')"
+          if npm view "$NAME@$VER" version >/dev/null 2>&1; then
             echo "already on npm — skipping publish"
           else
             npm publish --ignore-scripts --access public
           fi
+
+      - name: npm publish skipped (NPM_TOKEN unset)
+        if: env.NPM_TOKEN_SET == ''
+        run: echo "::warning::NPM_TOKEN secret is not set — skipped the npm publish; the Release tarball and registry.json are unaffected"
 
       - name: GitHub Release
         env:
