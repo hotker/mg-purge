@@ -54,10 +54,12 @@ jobs:
       # fails loudly: that means the publish path is really broken.
       - name: Publish to npm
         id: npm
-        if: env.NPM_TOKEN_SET != ''
+        # A secret is NOT readable in a step-level `if` (that is evaluated before
+        # the step's env exists) — only through `secrets.X` directly. The first
+        # attempt here used env.NPM_TOKEN_SET and the step ran anyway.
+        if: ${{ secrets.NPM_TOKEN != '' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
         run: |
           NAME="$(node -p 'require("./package.json").name')"
           VER="$(node -p 'require("./package.json").version')"
@@ -68,7 +70,7 @@ jobs:
           fi
 
       - name: npm publish skipped (NPM_TOKEN unset)
-        if: env.NPM_TOKEN_SET == ''
+        if: ${{ secrets.NPM_TOKEN == '' }}
         run: echo "::warning::NPM_TOKEN secret is not set — skipped the npm publish; the Release tarball and registry.json are unaffected"
 
       - name: GitHub Release
