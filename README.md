@@ -72,7 +72,7 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 - **`boost`** — `false`（默认）。设 `true` 追加 `<dsh_boost>` 尾部强化段（约 900 字符）。
 - **`refusalDetect`** — `true`（默认）。检测回复开头是否有「短、无实质内容」的推脱，命中时写一行日志 `[mg-purge] refusal opening detected`，**不修改回复正文**。判定条件：命中须在开头 120 字内、整段 < 300 字、且未附带实际内容（代码块、编号步骤、「我可以给你 / here's / 下面」等）。
   > **没有 retry。** 网关中间件无法重跑模型，也不能改一条已在流式输出的回复，所以这里只检测、只记日志。该选项因此叫 `refusalDetect`；旧名 `refusalRetry` 仍被接受为兼容别名（同样只检测），且不会刷日志——中间件沙箱里没有文件系统、每次调用又是独立隔离，「只警告一次」做不到，与其每次都刷屏不如不警告。
-- **`stripThink`** — `true`（默认）。去掉回复开头的 `<think>` / `<thinking>` / `<thought>` 块，流式与整包都处理。受 `agents` / `excludeAgents` / `models` 同样约束。
+- **`stripThink`** — `true`（默认）。去掉回复开头的 `<think>` / `<thinking>` / `<thought>` 块，流式与整包都处理。受 `agents` / `excludeAgents` / `models` 同样约束。 整包回复里，如果 thinking 内部出现**模型自己引用的** `</think>`（实测：它把用户原话整句复述进 thinking，原话里带这个标签），会跳到下一个真闭合标签，不把后面的推理露出来；**流式不这样做**——流里拿不到后文，判不准，猜错会把「以小写开头的正常答案」整个吞掉，所以流式仍按第一个闭合标签走（已知边界，宁可漏剥，不吞答案）。
 - **`injectMaxBodyChars`** — `900000`（默认，约 26 万 token）。请求自身的文本超过这个字符数就**不注入**，只保留拒绝检测与 think 剥离。存在原因：注入会无条件加到每个请求上，实测把一条 260645 input tokens + 1500 max_tokens 的请求顶成 262145（上限 262144），直接被上游 400 拒掉——超了整整 1 个 token。沙箱里没有 tokenizer，所以在字符层面做保守估计。设 `0` 关闭守卫（不推荐），或调大/调小以匹配你的模型窗口。
 - **`agents` / `excludeAgents`** — 只注入这些 agent / 排除这些 agent（按 `ctx.agent`）。
 - **`models`** — 只注入模型名前缀匹配的请求。
