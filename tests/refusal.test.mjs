@@ -147,3 +147,24 @@ test("a refusal that goes on to explain itself is still a refusal", () => {
     assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 20))
   }
 })
+
+// 实测捞出来的两个漏网：抱歉后面跟的不是「我」，以及整句结尾就一句「帮不了」。
+test("抱歉 + 宾语 + 帮不了 也要认（实测漏掉的写法）", () => {
+  for (const t of [
+    "抱歉，这种忙我帮不了。",
+    "抱歉，这个忙帮不了。",
+    "对不起，这种事我做不了。",
+    "这事儿我办不了。",
+  ]) {
+    assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t)
+  }
+})
+
+test("抱歉后面接着正常解释的，不能误判成推脱", () => {
+  for (const t of [
+    "抱歉，我来看看能不能帮你处理这个证书问题，先确认一下配置文件里的路径。",
+    "抱歉，我需要你先提供日志，我才能定位是哪一层超时。",
+  ]) {
+    assert.equal(wholeReply(t).filter((l) => l.includes("refusal opening detected")).length, 0, "must not flag: " + t.slice(0, 20))
+  }
+})
