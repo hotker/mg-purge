@@ -50,28 +50,39 @@ jobs:
       # (registry.json) and the Release tarball both work without it. So a
       # missing NPM_TOKEN skips the publish with a warning instead of failing the
       # whole release — that is what killed the v0.7.0 tag (13s, ENEEDAUTH, and
-      # no Release was ever created). A token that IS present but wrong still
-      # fails loudly: that means the publish path is really broken.
+      # no Release was ever created). Any other publish failure still fails the
+      # job: that means the publish path is really broken.
       - name: Publish to npm
+        #
+        # No `if:` on this step. Two attempts at a condition both failed: a step
+        # `if` cannot read a secret except as `secrets.X`, and a step that
+        # references `secrets` in `if` makes GitHub reject the run outright (two
+        # 0s runs with zero jobs). The step always runs and decides in bash: no
+        # token or ENEEDAUTH skips with a warning, anything else fails loudly.
         id: npm
-        # A secret is NOT readable in a step-level `if` (that is evaluated before
-        # the step's env exists) — only through `secrets.X` directly. The first
-        # attempt here used env.NPM_TOKEN_SET and the step ran anyway.
-        if: ${{ secrets.NPM_TOKEN != '' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           NAME="$(node -p 'require("./package.json").name')"
           VER="$(node -p 'require("./package.json").version')"
           if npm view "$NAME@$VER" version >/dev/null 2>&1; then
-            echo "already on npm — skipping publish"
-          else
-            npm publish --ignore-scripts --access public
+            echo "already on npm — skipping publish"; exit 0
           fi
-
-      - name: npm publish skipped (NPM_TOKEN unset)
-        if: ${{ secrets.NPM_TOKEN == '' }}
-        run: echo "::warning::NPM_TOKEN secret is not set — skipped the npm publish; the Release tarball and registry.json are unaffected"
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN secret is not set — skipped the npm publish; the Release tarball and registry.json are unaffected"
+            exit 0
+          fi
+          if OUT="$(npm publish --ignore-scripts --access public 2>&1)"; then
+            echo "$OUT"
+          else
+            echo "$OUT"
+            case "$OUT" in
+              *ENEEDAUTH*|*"need auth"*)
+                echo "::warning::npm rejected the configured NPM_TOKEN (ENEEDAUTH) — skipped the publish; Release tarball and registry.json are unaffected"
+                ;;
+              *) exit 1 ;;
+            esac
+          fi
 
       - name: GitHub Release
         env:
