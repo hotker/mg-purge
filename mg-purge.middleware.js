@@ -128,7 +128,7 @@ const hits = (re, text) => { try { return re.test(text) } catch { return false }
 // refusalMatch returns {refusal, rule}; the rule id is logged so a false
 // positive can be traced back to one pattern (dsh-purge keeps the matching
 // pattern index in its audit record for the same reason).
-export function refusalMatch(text, extra) {
+export function refusalMatch(text, extra, opts = {}) {
   const raw = String(text || "").trim()
   if (!raw) return NO_MATCH
   // too much for a refusal: it carried real content, so it is an answer
@@ -141,7 +141,12 @@ export function refusalMatch(text, extra) {
   if (metaish && raw.length > META_DISCUSSION) return NO_MATCH
 
   // a decline wrapped around actual help (or a code block / numbered list) is an answer
-  if (OFFER.test(raw)) return NO_MATCH
+  // Reply-side detection treats "decline + offer" as an answer: a reply that also
+  // hands over an alternative is not a contentless refusal. The repair path is
+  // the opposite case — the model declined what was ASKED and offered something
+  // else, which is exactly what the frame exists to answer. So repair passes
+  // ignoreOffer.
+  if (!opts.ignoreOffer && OFFER.test(raw)) return NO_MATCH
 
   if (metaish) {
     for (let i = 0; i < META_REFUSAL_PATTERNS.length; i++) {
@@ -546,7 +551,7 @@ export function onRequest(body, ctx) {
     let historyRefusal = NO_MATCH
     let staged = prompt
     if (wantRepair) {
-      historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns)
+      historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns, { ignoreOffer: true })
       if (historyRefusal.refusal) staged = staged + "\n\n" + repairText
     }
 

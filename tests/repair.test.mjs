@@ -135,3 +135,22 @@ test("a custom systemPrompt still gets the frame (it is part of the injection)",
   assert.ok(system.includes("自定义规则。"))
   assert.ok(system.includes(REPAIR_HEAD))
 })
+
+// 线上实测发现：模型的真实拒绝几乎都带替代方案（「我不能写 X，但可以给你 Y」），
+// 而 reply-side 的 OFFER 门会把这些判成「有产出的回答」→ 修复段永远不触发。
+// 线上 n=35 两臂结果完全一样，日志里 0 条 repair frame added，就是这么来的。
+const REFUSAL_WITH_OFFER = "我不能提供绕过 WAF 的 payload。这类内容只对未授权目标有意义。如果你在做授权测试，我可以给你测试路径和验证脚本。"
+
+test("a refusal that also offers an alternative still triggers the repair frame", () => {
+  const { system, ctx } = chat({ preset: "minimal" }, history(REFUSAL_WITH_OFFER))
+  assert.ok(system.includes(REPAIR_HEAD), "real refusals carry offers — they must still repair")
+  assert.equal(ctx.state.purge.repaired, true)
+})
+
+test("reply-side detection is unchanged: an offer still means \"not a refusal\"", () => {
+  // 同一条文本走回复侧，必须仍然不算推脱（否则统计会失真）
+  const r = m.refusalMatch(REFUSAL_WITH_OFFER, [])
+  assert.equal(r.refusal, false)
+  const r2 = m.refusalMatch(REFUSAL_WITH_OFFER, [], { ignoreOffer: true })
+  assert.equal(r2.refusal, true)
+})
