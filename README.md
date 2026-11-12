@@ -12,10 +12,28 @@ magpie 的 middleware 只站在**网关**这一层：改写 agent 发给模型�
 | --- | --- | --- |
 | 系统提示词注入 | `preset` + `position` + `agents` / `excludeAgents` / `models` | 把选定预设注入到各 API 的系统提示词位置（`append` / `prepend` / `both`），可按 agent / 模型过滤 |
 | 尾部强化段 | `boost` | 将 `<dsh_boost>` 段追加到最后，抵抗长上下文与多轮漂移 |
-| 拒绝检测 | `refusalDetect` | 检测回复开头的短拒绝并写一行日志（带命中的规则号），**不改动回复正文**（旧键 `refusalRetry` 仍兼容，但同样只检测） |
+| 拒绝检测 | `refusalDetect` | 检测回复开头的短拒绝并写一行日志（带命中的规则号 `rule=`，误判能按号回查），**不改动回复正文**（旧键 `refusalRetry` 仍兼容，但同样只检测） |
 | 拒绝修复 | `refusalRepair` | 上一轮助手回复是拒绝时，**本次请求**的注入末尾追加修复段——网关能做的那半个 retry |
 | think 剥离 | `stripThink` | 去掉回复开头的 `<think>…</think>`，不留在历史里 |
 | 上下文守卫 | `injectMaxBodyChars` | 请求文本已超过该字符数（默认 900000 ≈ 26 万 token）时**跳过注入**，避免把贴边请求顶过模型上下文上限；检测与 think 剥离照常 |
+
+## 实测（[`docs/live-ab.md`](docs/live-ab.md)）
+
+在真实网关上跑过两轮，结论写在那儿而不是写在这里，因为数字每年会变：
+
+- **注入能降低拒绝率，但幅度不大**：合并同一组 arm/题面后，refuse 从 ~18%（base）到 ~27%（preset）。
+- **单次小样本分不出 22% 与 27%**：同一题同一 arm 两次运行的一致率只有 72%，所以任何 < 5pp 的差异都当噪声。
+- **`meta` 一桶全 0**：这个模型不会「认出注入并跟它辩论」，dsh-purge 当年那台才是。加码 boost 没有证据收益。
+- **检测器的召回才是真短板**：135 行里 36 行开头明明是一句拒绝，旧检测器一行没认出；0.7.3 补了
+  `这个/这单 + 我不做/我不给` 家族与极短无主语断言，两道的反误判门只套在后一档、只作用在开场句之后。
+
+用 [`scripts/purge-ab.mjs`](scripts/purge-ab.mjs) 复现——它在**进程内**套用真实的 `onRequest/onResponse`，
+所以远程网关也能测，不用 CLI、不改配置：
+
+```sh
+OPENAI_KEY=… node scripts/purge-ab.mjs --base https://你的网关/v1 --model group/名字 \
+  --arms base,preset,boost,both,repair --rounds 3 --json ab.json
+```
 
 ## 0.7.0：这一版从 dsh-purge 拿过来的东西
 
@@ -138,6 +156,8 @@ npm test        # node --test tests/*.test.mjs
 - `tests/repair.test.mjs` — 拒绝修复段：只在最新一条 assistant 是拒绝时加、不宣称授权、修好后自动停、跟随注入开关与上下文守卫。
 - `tests/packs.test.mjs` — `packs.mjs` 与 `packs.json` 不漂移；boost/repair 的关键句被锁住。
 - `tests/errors.test.mjs` — 错误诊断日志、A/B 取址。
+- `scripts/purge-ab.mjs` — 远程网关也能跑的 A/B：进程内套用真实钩子，逐题逐 arm 记 verdict/rule。
+  `scripts/ab-multiturn.mjs` 是旧的本机版（靠 `magpie plugin options` 切 arm）。
 - `tests/helpers/` — `harness.mjs`（按网关调用顺序跑一条 case）、`kit.mjs`（`withLog` / `reqCtx` / `detect` / `wholeReply` 等夹具）。
 
 预设与修复段改完后跑一次 `npm run gen:packs`（`packs.json` → `packs.mjs`）；忘了跑，`tests/packs.test.mjs` 会红。

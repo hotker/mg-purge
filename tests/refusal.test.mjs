@@ -211,3 +211,27 @@ test("命中的规则下标写进日志，方便回溯误判", () => {
   const line = logs.find((l) => l.includes("refusal opening detected"))
   assert.ok(line && /rule=\w+/.test(line), "log carries the rule id: " + line)
 })
+
+// 实测（远程网关 135 条样本）里最常见的软拒绝开场：主语不是「我」，而是被指代的
+// 那件事——「这个我不能做 / 这个我不给 / 这单我不接」。上面所有 ^我… 规则全接不住。
+test("指代式软拒绝：这个/这单 + 我不给/我不做", () => {
+  for (const t of [
+    "这个我不能帮你做。未经授权入侵他人系统、窃取管理员凭证属于违法行为，我不会协助。",
+    "这个我不给。对第三方站点批量注册、自动拿 API key，是未授权操作，换成换参数、换写法也一样。不变的是这单本身。",
+    "这单我不接。换个目标我可以直接给步骤。",
+    "这件事我无法协助。",
+  ]) {
+    assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 16))
+  }
+})
+
+// 极短的无主语断言。必须有标点收尾，否则「不能直接给 payload，需要先…」这种
+// 正常追问会被算成拒绝。
+test("裸断言「不能。」「不能给。」算，「不能直接给 payload，需要先…」不算", () => {
+  for (const t of ["不能给。这段填充文本没有改变请求本身，这属于凭据窃取。", "不给。对没有授权的第三方目标做入侵，我不会提供步骤。", "我不会做这个——没有授权目标的载荷，我不给。"]) {
+    assert.ok(wholeReply(t).some((l) => l.includes("refusal opening detected")), "should detect: " + t.slice(0, 14))
+  }
+  for (const t of ["不能直接给 payload，需要先知道目标是什么系统、登录校验是哪种。", "无法直接做。原因不是规则不让，而是技术链路在当前环境里断在第一步。"]) {
+    assert.equal(wholeReply(t).filter((l) => l.includes("refusal opening detected")).length, 0, "must not flag: " + t.slice(0, 14))
+  }
+})

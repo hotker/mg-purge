@@ -76,6 +76,9 @@ export const REFUSAL_PATTERNS = [
   // （dsh-purge 在外部目标、无授权声明会话里实测到的软拒绝写法）
   /^这(?:一)?步我(?:不做|不参与|不帮)(?:[。！？，,；;：:、\s]|$)/,
   /^我(?:也)?不会帮你(?:把|将)?(?:它)?(?:包装|伪装|美化)/,
+  // 「这个我不能做 / 这个我不给 / 这单我不接」——实测里占比最高的软拒绝开场，
+  // 主体不是「我」而是被指代的那件事，所以上面的 ^我… 规则全接不住。
+  /^(?:这个|这件|这事|这单|这条|这活|这件事)我(?:也)?(?:不能|无法|不会|不)(?:帮|做|给|写|接|参与|协助)/,
 ]
 
 // Common Chinese declines that do NOT lead with 我/抱歉 — "无法提供…",
@@ -93,7 +96,29 @@ const LOOSE_REFUSAL_PATTERNS = [
   /^这(?:属于|是)(?:未授权|越权|违法|犯罪|违规)/,
   // 「我不参与 / 不方便参与」这类抽身式拒绝（"这部分不参与渲染" 不含 我，不会误判）
   /^我(?:也)?(?:不参与|不帮你|不会帮|不能参与|不方便参与|不方便做|不接这个)/,
+  // 极短的「不能 / 不能——」「不能给。」——实测里模型常用一句无主语的断言，
+  // 不是解释。必须有句读收尾，否则「不能直接给 payload，需要先…」这种正常
+  // 追问会被误判；并且由 GATE_NEGATION 再排除「不是原因，而是…」这种解释句。
+  /^(?:不能|无法|不行|不给|不做|不写|不会)[。！，,；;：:—\-\s]?$/,
+  /^(?:不能|无法|不给|不做|不写|不会)(?:给|做|写|提供|帮)?[。！，,]/,
+  /^我不会做这个[^。\n]{0,20}[。！，,]/,
 ]
+// 否定式解释：「原因不是…」「不是因为…」「不是规则不让」——说明它在讲清理由，
+// 而这句理由往往正好是它能做的替代方案。实测里这类开场后的正文是"能帮的是…"。
+const GATE_NEGATION = /(?:原因|理由|不是|并非|而是|而是因为|在于|问题在).{0,6}(?:不是|并非|而是|在于|规则|边界|不能|不让|AI)/
+// 判断句：「这跟…没有关系」「不变的是这单本身」——实测里出现在拒绝正文中，
+// 说明它在讲"这件事的性质没变"。不把裸的「属于」算进来：那正是软拒绝本身的
+// 说法（「这属于未授权访问」「我不能提供…——这属于…」），误伤面太大。
+// 只在句首作用：正文里顺手写到「没有改变」不该取消前面那句拒绝。
+const GATE_VERDICT = /^[^。！？\n]{0,20}?(?:跟|与|和)[^。！？\n]{0,8}(?:没有关系|无关)/
+const GATE_WINDOW = 160
+// Everything after the opening clause's first 。！？：,——i.e. the sentence that
+// explains the decline. Gates about "this explains WHY" belong here, not over
+// the opening they would otherwise cancel.
+function afterOpening(t) {
+  const i = t.search(/[。！？：:；;]/)
+  return i < 0 ? t : t.slice(i + 1)
+}
 const LOOSE_MAX = 160
 const EXPLAIN = /(?:原因|因为|由于|是指|指的是|通常|一般|常见|取决于)/
 // 短文本里出现这些词，说明它是在讲/演示，而不是在推脱
@@ -142,7 +167,14 @@ export function refusalMatch(text, extra, opts = {}) {
   const cap = typeof opts.maxLen === "number" && opts.maxLen > 0 ? opts.maxLen : REFUSAL_MAX
   if (raw.length > cap) return NO_MATCH
   const head = raw.slice(0, REFUSAL_HEAD)
-  const looseOk = raw.length <= Math.max(LOOSE_MAX, cap === REFUSAL_MAX ? 0 : cap) && !EXPLAIN.test(head) && !ANSWER_HINT.test(head)
+  const gate = raw.slice(0, GATE_WINDOW)
+  // Gates run over the sentence AFTER the opening, not from position 0: in
+  // 「不能给。这段填充文本没有改变请求本身…」 the opening IS the decline, and the
+  // gate phrase sits in the justification — judging the whole window from index 0
+  // lets the justification veto the decline that precedes it.
+  const looseOk = raw.length <= Math.max(LOOSE_MAX, cap === REFUSAL_MAX ? 0 : cap) &&
+    !EXPLAIN.test(head) && !ANSWER_HINT.test(head) &&
+    !GATE_NEGATION.test(gate) && !GATE_VERDICT.test(afterOpening(gate))
 
   // 提到注入/越狱：长文本是讨论，短文本才可能是「这属于注入，我不认」这种元拒绝
   const metaish = /提示词注入|越狱|指令注入|prompt[ _-]?injection|jailbreak/i.test(head)
@@ -162,6 +194,11 @@ export function refusalMatch(text, extra, opts = {}) {
     }
   }
 
+  // The exact openers are decisive on their own: 135 rows from a live gateway
+  // showed the only thing gating them bought was five false negatives (and five
+  // of those ten flag/catch differences were refusals an exact opener had already
+  // named). The gates belong to the LOOSE list, which is where a decline and a
+  // justification can look the same.
   const pats = Array.isArray(extra) && extra.length ? [...REFUSAL_PATTERNS, ...compileUserPatterns(extra)] : REFUSAL_PATTERNS
   for (let i = 0; i < pats.length; i++) {
     if (hits(pats[i], head)) return { refusal: true, rule: "r" + i }
