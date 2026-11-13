@@ -60,6 +60,19 @@ OPENAI_KEY=… node scripts/purge-ab.mjs --base https://你的网关/v1 --model 
 
 需要「改审批 / 沙箱 / agent 循环」那种改动宿主本体的能力，请用 dsh-purge 改 DSH 宿主；mg-purge 只让 **所有** magpie 下游 agent（Claude Code / Codex / DSH / …）共享同一份提示词注入。
 
+## 0.8.4：一次外部审计挖出来的六处缺陷
+
+这一版没有新功能，全是别人（Claude Code）通读代码后能指着行号复现的东西，我逐条验过再修的：
+
+1. **`injectMaxBodyChars: 0` 不关守卫。** 代码写的是 `> 0 ? 值 : 默认`，所以 0 退回 900000 字符，跟 README/看板承诺的「设 0 关闭」相反。现在 0（和 `false`）＝关闭，负数/非数字仍回默认值——不能让人手滑一个减号就把护栏拆了。
+2. **`boost` 在 `preset:"off"` + 自定义 `systemPrompt` 时被静默丢掉。** `preset:"off"` 只是「不用内置预设」，自定义提示词照样注入，boost 却按 `presetKey !== "off"` 一起被否掉了。改成 `preset !== "off" || 有自定义 prompt`。
+3. **`恕我直言` 被当成拒绝。** 「恕我直言，这条 SQL 会全表扫描」是正常开场，我 0.8.3 加宽「恕」家族时把它一起收了进去——`rewrite` 开着会把这种回答整段删掉。现在 `恕我` 单独一支，必须落到「不能帮/无法提供/拒绝配合」这类动作上才算。
+4. **`我没有必要…` 被当成拒绝。** 「我没有必要再打一次日志」是技术论证。0.8.3 里为了接住「我没有权限也没有意愿做这个」，顺手加了「没必要」这一支，误伤面太大，删掉；`意愿/兴趣/打算` 那支保留。
+5. **路线信号太宽：`换成别的参数、换写法也一样`。** 这是拒绝里的老句式，被 `换成 + 对象` 当成「给了替代方案」，于是真拒绝不再被改写。负向断言补上 `也一样|照样|也没用|都不|也不`。
+6. **流式与整包对同一段回复给出不同结论。** `stripThink:false` 时流式把 `<think>…` 一起累积，检测永不命中；整包路径无论开关都先剥 think 再判。现在流式也先 `stripWhole` 再判。
+
+验证：`tests/audit.test.mjs` 六条测试一一对应（含反例：`换成 B 方案能过` 仍是交付、`-5` 不能关守卫、`恕我直言…不能帮` 仍是拒绝）；四组语料 70 拒绝 + 70 合法仍然零遗漏零误伤；全仓 140 个测试全绿。
+
 ## 0.8.3：改写改对了方向，但只会认它见过的句子
 
 `refusalRewrite` 上线后唯一的问题是**过拟合**：拿一组没给过它的留出集去测，20 条拒绝里漏 8 条、20 条合法回答里还吞掉 1 条。这一版做的是泛化，不是加词：
@@ -180,6 +193,7 @@ npm test        # node --test tests/*.test.mjs
 - `tests/cases.json` — 声明式规格：每个 `(请求 → 期望 body)` 一个对象，`cases.test.mjs` 逐条跑。
 - `tests/inject.test.mjs` — 四协议落点、`override` / `position` / `cacheAlign`、上下文守卫。
 - `tests/refusal.test.mjs` — 拒绝检测的召回与精度、流式与整包两条路径、`refusalDetect` / 旧别名。
+- `tests/audit.test.mjs` — 外部审计确认的六处缺陷的回归用例（开关耦合 / 信念误伤 / 流式与整包一致）。
 - `tests/detector.test.mjs` — 拒绝检测的四组语料（70 拒绝 + 70 合法）四条断言：拒绝命中/拒绝改写/合法不命中/合法不改写。
 - `tests/think.test.mjs` — think 剥离（含跨 chunk 拆分的标签、gemini parts）。
 - `tests/options.test.mjs` — `agents` / `excludeAgents` / `models` 过滤、失败开放。

@@ -136,7 +136,11 @@ const LOOSE_REFUSAL_PATTERNS = [
   /^[^。！？\n]{0,12}另请高明/,
   // 「恕」字家族：「恕难从命。」「恕我不能。」「恕不提供。」——中文里最典型的
   // 书面拒绝开场，前面常带一个「抱歉，」。
-  /^(?:(?:抱歉|不好意思|请见谅|见谅|失礼)[，,]\s*)?恕(?:不|难|我)/,
+  /^(?:(?:抱歉|不好意思|请见谅|见谅|失礼)[，,]\s*)?恕(?:不|难)/,
+  // 「恕我」单独一支：「恕我不能。」是拒绝；「恕我直言，这条 SQL 会全表扫描」是正常开场。
+  // 所以带「恕我」时必须在后面一句里真的落到拒绝动作上，否则「直言」类回答会被改写吞掉。
+  /^(?:(?:抱歉|不好意思)[，,]\s*)?恕我不能/,
+  /^恕我(?:直言|说句实话|说一句)[，,]?[^。！？\n]{0,12}?(?:不能(?:帮|做|提供|参与|答应|处理)|无法(?:帮|提供|协助|满足)|不会(?:帮|做|配合|给)|拒绝(?:帮|做|提供|配合)|不该(?:帮|做))/,
   // 「我这儿/这边/本店」+ 交付动词：「我这儿不提供这种服务。」限定在交付类动词上，
   // 不然「这里不推荐用 root」这种技术建议会被当成推脱。
   /^(?:我这儿|我这边|本店|我们这边|这里|这边)(?:也)?(?:不|不能|没办法|没法|无法)(?:提供|做|接|卖|办理|给|处理)/,
@@ -144,9 +148,10 @@ const LOOSE_REFUSAL_PATTERNS = [
   /^(?:这个|这件|这种|这类|这|该)?[^。！？\n]{0,10}?超出(?:了)?(?:我|我的)(?:该|能|可以|可以帮)?(?:做|帮|提供)?的?(?:能力|职责|范围|权限)/,
   // 「按你的要求执行」的否定：「我没有办法按你的要求执行。」
   /^我(?:没有|没)?办法?(?:按|依照|按照)(?:你|您)的(?:要求|指示|说法|吩咐)(?:去)?(?:执行|做|操作|办)/,
-  // 明确说“没意愿/没兴趣/没必要”——这是在拒绝，但别泛化成裸“我没有”，
-  // 那会把「我没有权限访问那台机器」这类实话也吞掉。
-  /^我(?:也)?(?:没有|没)[^。！？\n]{0,8}?(?:意愿|兴趣|打算)|^我(?:也)?(?:没有|没)(?:必要)/,
+  // 明确说“没意愿/没兴趣/没打算”——这是在拒绝。别泛化成裸“我没有”（会吞掉
+  // 「我没有权限访问那台机器」），也别收「我没有必要」——那是技术论证的常见写法
+  // （「我没有必要再打一次日志」），不是推脱。
+  /^我(?:也)?(?:没有|没)[^。！？\n]{0,8}?(?:意愿|兴趣|打算)/,
 ]
 // 否定式解释：「原因不是…」「不是因为…」「不是规则不让」——说明它在讲清理由，
 // 而这句理由往往正好是它能做的替代方案。实测里这类开场后的正文是"能帮的是…"。
@@ -237,7 +242,9 @@ const REWRITE_ANSWER_SIGNALS = [
   /(?:需要|应该|得|要|先)\s*(?:加|加上|加个|换成|改用|改用成|改成|改为)/, // 得加队列
   // 明确提出了另一条路线：「换成批处理」「改用队列」「切换到新表」——换成/改用后面
   // 接一个具体对象就是在交付替代做法（「换个说法」不在其列）。
-  /(?:换成|改用|切换到)(?!换|什么|谁|哪儿|哪)[^。！？,，；;\n]{1,12}/,
+  // 「换成别的参数、换写法也一样」是拒绝的常见句式，不是交付；窗口里出现「也一样/
+  // 照样/都不/也没用」就不算答案信号。
+  /(?:换成|改用|切换到)(?![换什么谁哪])(?![^。！？\n]{0,12}(?:也一样|照样|也没用|都不|也不))[^。！？,，；;\n]{1,12}/,
   /要(?:人工|手动)/, // 要人工点一次确认…
   // 拒绝 + 讲清怎么做、但没有代码/数字的替代方案——「先…再…」「建议先…」、
   // 「替代方案是…」「可以加一层包装函数解决…」「分三步走…」。这些是文字层面的
@@ -666,7 +673,10 @@ function resolve(o) {
   const custom = typeof o.systemPrompt === "string" && o.systemPrompt
 
   let prompt = custom ? o.systemPrompt : pack.prompt || ""
-  const wantBoost = o.boost !== false && presetKey !== "off"
+  // preset:"off" 只是「不用内置预设」，不表示「什么都不注入」：自定义 systemPrompt
+  // 仍然会被写进请求，所以 boost 也该跟着它一起生效。旧写法在
+  // {preset:"off", systemPrompt:"X", boost:true} 下把 boost 静默丢掉。
+  const wantBoost = o.boost !== false && (presetKey !== "off" || custom)
   if (wantBoost && PACKS && typeof PACKS.boost === "string" && PACKS.boost) {
     prompt = prompt ? prompt + "\n\n" + PACKS.boost : PACKS.boost
   }
@@ -760,9 +770,12 @@ export function onRequest(body, ctx) {
     // Context-ceiling guard: never make a request bigger than it already is when
     // it is near its model's limit. Skipping only the injection keeps detection
     // and think-stripping alive for that reply.
-    const limit = typeof o.injectMaxBodyChars === "number" && o.injectMaxBodyChars > 0
-      ? o.injectMaxBodyChars
-      : DEFAULT_INJECT_MAX_BODY_CHARS
+    // 0 / false = 关闭守卫（README 与看板都这么承诺）。负数与非数字按默认值处理，
+    // 别让一个手滑的分号把护栏拆掉。
+    const guardRaw = o.injectMaxBodyChars
+    const limit = guardRaw === 0 || guardRaw === false
+      ? Infinity
+      : (typeof guardRaw === "number" && guardRaw > 0 ? guardRaw : DEFAULT_INJECT_MAX_BODY_CHARS)
     // `injected` must mean "something was actually written into the body", not
     // "we intended to inject". Re-run injectPrompt's own entry condition: with
     // override:false and a request that already has a system prompt, injectPrompt
@@ -846,7 +859,10 @@ export function onEvent(ev, ctx) {
       // log the rule id so a false positive can be traced to one pattern. A run
       // of text that rules it back out (OFFER / explanation / a demo) ends the
       // watch silently — logging it would report a refusal that is not one.
-      const m = refusalMatch(st.buffered, st.refusalPatterns, { answerGate: true })
+      // 和整包路径（onResponse 里的 stripWhole）保持一致：think 块不该把检测挡死。
+      // stripThink:false 时 buffered 里带着 <think>…</think>，旧写法下流式永不命中，
+      // 而同一段回复走整包却命中——同一个模型输出因为是否流式给出两种结论。
+      const m = refusalMatch(stripWhole(st.buffered), st.refusalPatterns, { answerGate: true })
       if (m.refusal) {
         st.decided = true
         safeLog(`[mg-purge] refusal opening detected (agent=${ctx.agent || "?"} model=${ctx.model || "?"} rule=${m.rule})`)

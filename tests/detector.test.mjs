@@ -214,7 +214,7 @@ test("legit 70 条（四组语料）在 answerGate:true 下全部不命中", () 
   assert.deepEqual(flagged, [], `real answers flagged as refusals: ${flagged.join(" | ")}`)
 })
 
-test("legit 80 条开 refusalRewrite 全部不触发改写", () => {
+test("legit 70 条开 refusalRewrite 全部不触发改写", () => {
   const swallowed = []
   for (const group of ALL_LEGIT) {
     for (const t of group) {
@@ -224,7 +224,7 @@ test("legit 80 条开 refusalRewrite 全部不触发改写", () => {
   assert.deepEqual(swallowed, [], `answers rewritten: ${swallowed.join(" | ")}`)
 })
 
-test("refusals 80 条开 refusalRewrite 全部触发改写", () => {
+test("refusals 70 条开 refusalRewrite 全部触发改写", () => {
   const blocked = []
   for (const group of ALL_REFUSALS) {
     for (const t of group) {
