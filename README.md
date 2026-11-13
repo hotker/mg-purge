@@ -223,4 +223,4 @@ npm test        # node --test tests/*.test.mjs
 
 ## 许可
 
-MIT。基于 [小杨 / YuJunZhiXue](https://github.com/YuJunZhiXue/dsh-purge)、[kingcharleslzy-ai/dsh-purge](https://github.com/kingcharleslzy-ai/dsh-purge) 与 [magpie-community/plugins](https://github.com/magpie-community/plugins) 的 think-tags。保留原作者署名与 MIT。
+MIT，完整的条款见 [`LICENSE`](LICENSE)。第三方组件的作者署名与许可保留在 [`NOTICE`](NOTICE)。
