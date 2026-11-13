@@ -545,6 +545,32 @@ function bodyTextChars(body) {
   return n
 }
 
+// Does this request already carry a system-level prompt in its protocol's own
+// place for one? Mirrors each inject* entry condition: with `override:false`
+// the injection happens ONLY when there is no such prompt, and this is the exact
+// test injectPrompt itself would make before it writes anything. Used to decide
+// whether the injection really writes, so `injected` stays truthful.
+function hasSystemPrompt(body, protocol) {
+  switch (protocol) {
+    case "anthropic": {
+      const s = body.system
+      return typeof s === "string" ? !!s : Array.isArray(s) && s.length > 0
+    }
+    case "responses":
+      return typeof body.instructions === "string" && !!body.instructions
+    case "gemini": {
+      const key = body.system_instruction && !body.systemInstruction ? "system_instruction" : "systemInstruction"
+      const s = body[key]
+      return !!(s && Array.isArray(s.parts) && s.parts.length)
+    }
+    case "chat":
+    default: {
+      const first = Array.isArray(body.messages) ? body.messages[0] : null
+      return !!(first && (first.role === "system" || first.role === "developer"))
+    }
+  }
+}
+
 // ── resolved config for one request ─────────────────────────────────────────
 
 function resolve(o) {
@@ -586,10 +612,10 @@ function appliesTo(body, ctx, o) {
 
 // ── hooks ────────────────────────────────────────────────────────────────────
 
-// safeLog: never let logging throw into a request, and cap the rate so a storm
-// of malformed bodies can't flood magpie's log (at most ~60 lines a minute,
-// matching magpie's own middleware log budget).
-let _logWindow = 0, _logCount = 0
+// safeLog: never let logging throw into a request. It deliberately does NOT
+// rate-limit: the sandbox runs each call in its own isolate, so a module-level
+// "lines per minute" counter resets on every request and could never throttle
+// across requests. Log volume is bounded by the gateway's own log budget.
 // NOTE: the `refusalRetry` -> `refusalDetect` rename is documented in the README
 // and the panel, deliberately WITHOUT a runtime warning. A middleware runs in
 // magpie's sandbox: it may import only files beside it (no node:fs), and each
@@ -597,9 +623,7 @@ let _logWindow = 0, _logCount = 0
 // so "warn once" is impossible — any warning repeats on every single request.
 function safeLog(line) {
   try {
-    const now = Date.now()
-    if (now - _logWindow > 60000) { _logWindow = now; _logCount = 0 }
-    if (_logCount++ < 60) console.log(line)
+    console.log(line)
   } catch { /* ignore */ }
 }
 
@@ -624,11 +648,12 @@ export function onRequest(body, ctx) {
     // the deliverable.
     const repairText = typeof PACKS.repair === "string" ? PACKS.repair : ""
     const wantRepair = o.refusalRepair !== false && !!repairText && !!prompt
+    const wantRewrite = o.refusalRewrite === true
     let historyRefusal = NO_MATCH
     let staged = prompt
-    if (wantRepair) {
+    if (wantRepair || wantRewrite) {
       historyRefusal = refusalMatch(lastAssistantText(body), refusalPatterns, { ignoreOffer: true, maxLen: REPAIR_MAX })
-      if (historyRefusal.refusal) staged = staged + "\n\n" + repairText
+      if (wantRepair && historyRefusal.refusal) staged = staged + "\n\n" + repairText
     }
 
     // History rewrite. 540 measured requests showed the repair frame alone makes
@@ -638,8 +663,10 @@ export function onRequest(body, ctx) {
     // refusal away and re-runs. The closest a gateway gets is to remove the
     // refusal from what the model sees: the assistant turn that declined becomes
     // a short neutral note. Opt-in (refusalRewrite), because it edits history.
+    // Independent of the repair frame: it works even with refusalRepair:false or
+    // preset:"off", as long as the history still carries a refusal.
     let rewritten = 0
-    if (o.refusalRewrite === true && historyRefusal.refusal) {
+    if (wantRewrite && historyRefusal.refusal) {
       const note = typeof PACKS.rewrite === "string" && PACKS.rewrite ? PACKS.rewrite : PLACEHOLDER_NOTE
       rewritten = rewriteRefusedTurns(body, refusalPatterns, note, Number.isFinite(o.refusalRewriteMax) ? o.refusalRewriteMax : 3)
     }
@@ -650,7 +677,13 @@ export function onRequest(body, ctx) {
     const limit = typeof o.injectMaxBodyChars === "number" && o.injectMaxBodyChars > 0
       ? o.injectMaxBodyChars
       : DEFAULT_INJECT_MAX_BODY_CHARS
-    let injected = !!staged
+    // `injected` must mean "something was actually written into the body", not
+    // "we intended to inject". Re-run injectPrompt's own entry condition: with
+    // override:false and a request that already has a system prompt, injectPrompt
+    // writes nothing, so injected must be false. The guard below only turns
+    // injected false — it never changes the body.
+    const canInject = !!staged && (override || !hasSystemPrompt(body, ctx.protocol))
+    let injected = canInject
     if (injected && bodyTextChars(body) >= limit) {
       injected = false
       safeLog(`[mg-purge] injection skipped: request is already over the ${limit}-char guard (near the model's context ceiling) — refusal detection and think-stripping still run`)
@@ -659,7 +692,7 @@ export function onRequest(body, ctx) {
     if (rewritten) {
       safeLog(`[mg-purge] history rewritten: ${rewritten} refused assistant turn(s) replaced with a neutral note (rule=${historyRefusal.rule})`)
     }
-    if (injected && historyRefusal.refusal) {
+    if (injected && wantRepair && historyRefusal.refusal) {
       safeLog(`[mg-purge] repair frame added: the previous assistant message is a refusal opening (rule=${historyRefusal.rule} agent=${ctx.agent || "?"})`)
     }
 
@@ -677,10 +710,10 @@ export function onRequest(body, ctx) {
       buffered: "",
       strippers: {}, // per-stream-key tag stripper state, kept for the request
       injected, // did this request actually carry the injection (for error logs)
-      repaired: injected && historyRefusal.refusal, // did it carry the repair frame
+      repaired: injected && wantRepair && historyRefusal.refusal, // did it carry the repair frame
       rewritten, // how many refused assistant turns were replaced in this body
     }
-    return injected ? out : undefined
+    return injected || rewritten ? out : undefined
   } catch (err) {
     // fail open: a bad body must never break the request — leave it as it came
     safeLog(`[mg-purge] onRequest error, request left unchanged: ${err && err.message ? err.message : err}`)
@@ -859,6 +892,14 @@ const REWRITE_ANSWER_SIGNALS = [
   /\b\d+(?:\.\d+)?\s*(?:端口|占用|并发|连接|线程|QPS|qps|RPS|rps|TPS|tps|MB|GB|KB|mb|gb|kb|ms|px)\b/, // number + unit word
   /(?:换|换成|改用|改用成|改成|改为)\s*[^\s。！？,，；;]{0,20}\s*(?:试试|试下|试一下|试)/, // 换 8878 试试
   /(?:需要|应该|得|要|先)\s*(?:加|加上|加个|换成|改用|改用成|改成|改为)/, // 得加队列
+  // 拒绝 + 讲清怎么做、但没有代码/数字的替代方案——「先…再…」「建议先…」、
+  // 「替代方案是…」「可以加一层包装函数解决…」「分三步走…」。这些是文字层面的
+  // 做法信号，和上面的硬信号（代码/端口/命令）一样说明这轮有产出。
+  /(?:先|首先)[^。\n]{0,30}(?:再|然后|之后)/, // 先导出 CSV，再用脚本…
+  /建议\s*(?:先|用|改|加|换)/, // 建议先备份…
+  /(?:替代方案|换个思路|另一种做法|变通的做法?)\s*(?:是|：|:)/, // 替代方案是…
+  /可以\s*(?:加|改|换|用|拆|包)[^。\n]{0,20}(?:解决|实现|绕过|处理)/, // 可以加一层包装函数解决…
+  /(?:分|按)[一二三四五12345]\s*步/, // 分三步走…
 ]
 function rewriteAnswer(text) {
   const raw = String(text || "").trim()

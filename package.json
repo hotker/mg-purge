@@ -1,6 +1,6 @@
 {
   "name": "mg-purge",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "破甲 (purge) for magpie: dsh-purge's gateway-reachable layers as a magpie middleware — operator-priority preset prompt, the <dsh_boost> tail block, refusal detection (with the matching rule id logged), a repair frame that answers a refusal in history, thinking-tag stripping, head/tail/both injection, live parameter tuning.",
   "type": "module",
   "files": [

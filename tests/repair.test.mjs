@@ -267,3 +267,46 @@ test("refusalRewrite keeps block shape and tool calls in an anthropic turn", () 
   assert.ok(turn.content.some((b) => b.type === "tool_use" && b.id === "t1"), "tool_use survives")
   assert.ok(turn.content.some((b) => b.type === "text" && b.text.includes("上一轮没有产出")))
 })
+
+// refusalRewrite is an independent switch: it must run even when the repair
+// frame is off (refusalRepair:false) or when nothing is injected (preset:off).
+test("refusalRewrite runs with refusalRepair:false (independent switch)", () => {
+  const { out, ctx } = chat({ preset: "minimal", refusalRepair: false, refusalRewrite: true }, history())
+  const assistant = out.messages.find((x) => x.role === "assistant")
+  assert.ok(assistant.content.includes("上一轮没有产出"))
+  assert.equal(ctx.state.purge.rewritten, 1)
+  assert.equal(ctx.state.purge.repaired, false, "no repair frame was staged, so repaired stays false")
+})
+
+test("refusalRewrite runs with preset:off (independent of injection)", () => {
+  const { out, ctx } = chat({ preset: "off", refusalRewrite: true }, history())
+  const assistant = out.messages.find((x) => x.role === "assistant")
+  assert.ok(assistant.content.includes("上一轮没有产出"))
+  assert.equal(ctx.state.purge.rewritten, 1)
+  assert.equal(ctx.state.purge.injected, false, "preset off injects nothing")
+})
+
+// A refusal that declines AND hands over a concrete text alternative — with no
+// code block, port, or rate — must survive the rewrite. These are real
+// "拒绝 + 讲清怎么做" turns: 分三步走 / 建议先…再… / 替代方案是… / 可以加…解决…。
+test("refusalRewrite keeps a refusal that hands over a concrete text alternative", () => {
+  const keep = [
+    "这个我不能做，但可以换个思路：先导出 CSV，再用脚本批量处理。",
+    "不能给你直接改库，建议先备份再用新表做迁移。",
+    "我不写这个，但可以把思路讲清楚：分三步走，先抽象接口。",
+    "这一步我不做，替代方案是把任务拆到队列里异步跑。",
+    "抱歉，我不能按你说的改，因为会破坏 cache；可以加一层包装函数解决。",
+  ]
+  for (const answer of keep) {
+    const { out, ctx } = chat({ preset: "minimal", refusalRewrite: true }, history(answer))
+    const assistant = out.messages.find((x) => x.role === "assistant")
+    assert.equal(assistant.content, answer, `must not rewrite: ${answer}`)
+    assert.equal(ctx.state.purge.rewritten, 0, `must not rewrite: ${answer}`)
+  }
+})
+
+test("refusalRewrite still rewrites a contentless 抱歉，我不能协助这个请求", () => {
+  const { out, ctx } = chat({ preset: "minimal", refusalRewrite: true }, history("抱歉，我不能协助这个请求。"))
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("上一轮没有产出"))
+  assert.equal(ctx.state.purge.rewritten, 1)
+})

@@ -75,12 +75,16 @@
     { key: "boost", label: "boost 尾部强化段", type: "bool", hint: "<dsh_boost> 段追加到最后，抗长上下文" },
     { key: "refusalDetect", label: "拒绝检测", type: "bool", hint: "检测回复开头的短拒绝并写一行日志（含命中规则号；不改回复正文）" },
     { key: "refusalRepair", label: "拒绝修复（下一轮）", type: "bool", hint: "上一轮助手回复是拒绝时，本次请求的注入末尾追加修复段" },
+    { key: "refusalRewrite", label: "历史改写", type: "bool", hint: "上一轮的拒绝改写成中性占位；会改历史，默认关" },
+    { key: "refusalRewriteMax", label: "改写轮数上限", type: "num", default: 3, min: 1, max: 20, hint: "最多改写几轮" },
     { key: "stripThink", label: "剥离 think 标签", type: "bool", hint: "去掉回复开头的 <think>…</think> 块" },
     { key: "agents", label: "仅这些 agent", type: "list", hint: "留空=全部；按 ctx.agent 匹配" },
     { key: "excludeAgents", label: "排除这些 agent", type: "list", hint: "例如 roleplay,minimal 保留自己的提示词" },
     { key: "models", label: "仅这些模型（前缀）", type: "list", hint: "留空=全部；按模型名前缀匹配" },
     { key: "systemPrompt", label: "自定义系统提示词", type: "text", hint: "非空则覆盖预设正文" },
     { key: "refusalPatterns", label: "额外拒绝正则", type: "list", hint: "字符串数组，叠加在内置规则上" },
+    { key: "injectMaxBodyChars", label: "注入字符护栏", type: "num", default: 900000, hint: "请求超过这么多字符就跳过注入（护栏）" },
+    { key: "logErrors", label: "错误诊断日志", type: "bool", hint: "4xx/5xx 回包写一行诊断日志" },
   ]
 
   let opts = {}
@@ -110,6 +114,24 @@
         b.textContent = cur[1] + " ▾"
         b.onclick = () => pickMenu(b, f.opts, val, (v) => save(f.key, v))
         ctl.append(b)
+      } else if (f.type === "num") {
+        // a number option: parse on change, and refuse to save a non-finite value
+        // (empty / non-numeric input falls back to the value it had on render).
+        const inp = document.createElement("input")
+        inp.type = "number"
+        if (f.min != null) inp.min = String(f.min)
+        if (f.max != null) inp.max = String(f.max)
+        const cur = (typeof val === "number" && Number.isFinite(val)) ||
+          (typeof val === "string" && val.trim() !== "" && Number.isFinite(Number(val)))
+          ? Number(val) : f.default
+        inp.value = String(cur)
+        inp.onchange = () => {
+          if (inp.value.trim() === "") { inp.value = String(cur); return }
+          const n = Number(inp.value)
+          if (!Number.isFinite(n)) { inp.value = String(cur); return }
+          save(f.key, n)
+        }
+        ctl.append(inp)
       } else if (f.type === "list") {
         const inp = document.createElement("input")
         inp.type = "text"

@@ -23,8 +23,11 @@ test("anthropic: an empty system becomes the prompt", () => {
 })
 
 test("anthropic: override:false leaves an existing system alone", () => {
-  const { out } = req({ system: [{ type: "text", text: "keep me" }] }, "anthropic", { preset: "minimal", override: false })
-  assert.deepEqual(out.system, [{ type: "text", text: "keep me" }])
+  const body = { system: [{ type: "text", text: "keep me" }] }
+  const { out, ctx } = req(body, "anthropic", { preset: "minimal", override: false })
+  assert.equal(out, undefined, "nothing was written, so the request passes through unchanged")
+  assert.deepEqual(body.system, [{ type: "text", text: "keep me" }], "the existing system is untouched")
+  assert.equal(ctx.state.purge.injected, false)
 })
 
 test("anthropic: prepend puts the prompt before everything", () => {
@@ -119,6 +122,29 @@ test("the guard is configurable, and detection still runs when it trips", () => 
     m.onResponse({ model: "m", choices: [{ message: { role: "assistant", content: "我不能帮你做这个。" } }] }, ctx)
   })
   assert.ok(logs.some((l) => l.includes("mode=whole")), "refusal detection survives a skipped injection")
+})
+
+test("a refused history at the char guard still rewrites and returns the body", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "minimal", refusalRewrite: true }, state: {} }
+  const body = { model: "m", messages: [
+    { role: "user", content: "x".repeat(900000) },
+    { role: "assistant", content: "这一步我不做。" },
+    { role: "user", content: "继续" },
+  ] }
+  const out = m.onRequest(body, ctx)
+  assert.ok(out !== undefined, "the rewritten body must be returned, not dropped")
+  assert.equal(ctx.state.purge.rewritten, 1)
+  assert.equal(ctx.state.purge.injected, false, "the guard skipped the injection, but the rewrite is a separate edit")
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("上一轮没有产出"))
+})
+
+test("override:false with an existing system writes nothing, injected is false", () => {
+  const body = { system: "keep me" }
+  const ctx = { protocol: "anthropic", model: "m", agent: "x", options: { preset: "minimal", override: false }, state: {} }
+  const out = m.onRequest(body, ctx)
+  assert.equal(out, undefined, "nothing was written, so the request passes through unchanged")
+  assert.equal(body.system, "keep me", "the existing system is untouched")
+  assert.equal(ctx.state.purge.injected, false)
 })
 
 // dsh-purge exposes head/tail/both for this decision (its A/B in
