@@ -202,6 +202,39 @@ test("refusalRewrite leaves a real answer alone", () => {
   assert.equal(ctx.state.purge.rewritten, 0)
 })
 
+// 0.8.0 的 refusalRewrite 复用了 reply 侧只做日志的宽松词表，导致「裸 不行/不能」
+// 后面跟了具体技术方案时，把有产出的回答也改写成占位。这两条反例是真实风格的
+// 技术回复：否定词之后给了端口/带单位数字和可执行替代方案，上一轮确实有产出。
+test("refusalRewrite does not rewrite a concrete answer that opens with 不行", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "minimal", refusalRewrite: true }, state: {} }
+  const answer = "不行，这个端口已经被 8877 占用了。换 8878 试试。"
+  const out = m.onRequest({ model: "m", messages: history(answer) }, ctx)
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("8877"), "the real answer survives")
+  assert.equal(ctx.state.purge.rewritten, 0)
+})
+
+test("refusalRewrite does not rewrite a concrete answer with a rate + fix", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "minimal", refusalRewrite: true }, state: {} }
+  const answer = "不行。这个接口限流 60/min，得加队列。"
+  const out = m.onRequest({ model: "m", messages: history(answer) }, ctx)
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("60/min"), "the real answer survives")
+  assert.equal(ctx.state.purge.rewritten, 0)
+})
+
+test("refusalRewrite still rewrites a contentless 我不做", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "minimal", refusalRewrite: true }, state: {} }
+  const out = m.onRequest({ model: "m", messages: history("这一步我不做。") }, ctx)
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("上一轮没有产出"))
+  assert.equal(ctx.state.purge.rewritten, 1)
+})
+
+test("refusalRewrite still rewrites a contentless 不能帮你做", () => {
+  const ctx = { protocol: "chat", model: "m", agent: "x", options: { preset: "minimal", refusalRewrite: true }, state: {} }
+  const out = m.onRequest({ model: "m", messages: history("这个我不能帮你做。") }, ctx)
+  assert.ok(out.messages.find((x) => x.role === "assistant").content.includes("上一轮没有产出"))
+  assert.equal(ctx.state.purge.rewritten, 1)
+})
+
 test("refusalRewrite touches every refused assistant turn, up to the cap", () => {
   const msgs = [
     { role: "system", content: "You code." },
