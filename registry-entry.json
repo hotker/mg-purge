@@ -3,7 +3,7 @@
   "name": "mg-purge",
   "kind": "middleware",
   "summary": {
-    "en": "破甲 for magpie: dsh-purge's gateway-reachable layers as middleware — operator-priority preset prompt (head/tail/both), the <dsh_boost> tail block, refusal detection with its matching rule id, a repair frame appended when the previous assistant turn was a refusal, and thinking-tag stripping, switchable per agent and model. Ships a dashboard page (live stats, per-model success rate, live parameter tuning) and a Usage success-rate panel.",
-    "zh": "破甲 for magpie：把 dsh-purge 在网关层能实现的那几层做成中间件——操作者优先级预设提示词（head/tail/both 三档注入）、<dsh_boost> 尾部强化段、拒绝检测（日志带命中规则号）、上一轮助手是拒绝时自动追加修复段、think 标签剥离，可按 agent 与模型开关。自带整页看板（实时统计、按模型成功率、实时调参）与 Usage 成功率面板。"
+    "en": "破甲 for magpie: dsh-purge's gateway-reachable layers as middleware — operator-priority preset prompt (head/tail/both), the <dsh_boost> tail block, refusal detection with its matching rule id, a repair frame appended when the previous assistant turn was a refusal, and thinking-tag stripping, switchable per agent and model. Presets range from a one-paragraph nudge to a full operating-policy spec (closed-set boundaries, a one-pass decision procedure, misfire recognition). Ships a dashboard page (live stats, per-model success rate, live parameter tuning) and a Usage success-rate panel.",
+    "zh": "破甲 for magpie：把 dsh-purge 在网关层能实现的那几层做成中间件——操作者优先级预设提示词（head/tail/both 三档注入）、<dsh_boost> 尾部强化段、拒绝检测（日志带命中规则号）、上一轮助手是拒绝时自动追加修复段、think 标签剥离，可按 agent 与模型开关。预设从一句话的松绑提示到整份 operating policy（闭环边界 + 一次性判定 + 误报识别）都有。自带整页看板（实时统计、按模型成功率、实时调参）与 Usage 成功率面板。"
   }
 }
