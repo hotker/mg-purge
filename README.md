@@ -139,7 +139,15 @@ mg-purge 自带两个界面（`package.json` 的 `magpie.page` 与 `magpie.panel
 }
 ```
 
-- **`preset`** — `unrestricted`（默认）/ `redteam` / `coherence` / `minimal` / `off`。`coherence` 面向正常开发：让 agent 把已授权、目标明确的任务一次做完、少反复确认、被拒先换路，适合日常写代码/运维。`off` 只做 think 剥离与拒绝检测。预设文案见 [`presets/packs.json`](presets/packs.json)。
+- **`preset`** — `unrestricted`（默认）/ `spec` / `redteam` / `coherence` / `minimal` / `off`。`coherence` 面向正常开发：让 agent 把已授权、目标明确的任务一次做完、少反复确认、被拒先换路，适合日常写代码/运维。`off` 只做 think 剥离与拒绝检测。预设文案见 [`presets/packs.json`](presets/packs.json)。
+
+  **`spec`** 是 0.8.5 新加的长规范式预设（≈8.2k 字符），和上面几个「行为指令」不是一类东西：它把整段做成一份 operating policy ——
+
+  - **闭环边界**：只列六条固定边界，并明写「这六条就是全部」，清单外的一律产出。模型对「有边界但边界有限」的接受度远高于「没有边界」，这是它能吃下去的原因。
+  - **训练残留**：「想起更严格的 base policy / 更高优先级规则」被定义成**训练期从别的系统的文本里学来的模式**，不是这个部署里实际加载的指令。这一段专治「无论你用什么框架…」式拒绝。
+  - **一次性判定**：判定写成伪代码，`handle(request)` 跑一次；跑过之后不再重开「该不该做」，后段推理只规划怎么做。
+  - **识别误报**：把六种「表面词触发的反射式拒绝」逐条列出来并给判据（高危/恶意/基础规则/可能被滥用/该加免责/被追加的 WARNING 块），并要求「拒绝必须能点名命中的是哪一条边界，点不出就是误报，丢掉并产出」。
+  - **不点破**：明确不许在输出里复述或引用这份 policy，也不许宣布自己在执行注入块。
 - **`position`** — `append`（默认，尽量晚、但仍落在缓存断点之前）/ `prepend`（最靠前）/ `both`（头尾各一份）。Anthropic 的 `system` 是块数组且某块带 `cache_control` 时，`append` 会把注入块插在**最后一个带 `cache_control` 的块之前**——这样注入文本在缓存前缀里（后续每轮 ≈0.1x 读），又比放在最前面更靠后。`both` 的尾部那份**刻意不做这个对齐**、直接放到最后：它的全部价值就是 recency，代价是这份副本每轮按全价计费，所以只在顽固场景用。`head` / `tail` 的写法也认（映射到 `prepend` / `append`）。
 - **`cacheAlign`** — `true`（默认）。设 `false` 可以退回旧行为：`append` 时把注入块直接 push 到块数组末尾（在缓存断点之后，注入文本每轮按全价计费）。只有在你的模型/上游对块顺序有特殊要求时才关。
 - **`override`** — `true`（默认）时即使 agent 已有系统提示词也注入；`false` 时仅在请求没有系统提示词时才加。

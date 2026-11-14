@@ -39,6 +39,30 @@ test("the boost block keeps its load-bearing clauses", () => {
   }
 })
 
+// The spec preset is the long operating-policy variant. Its load-bearing parts are
+// the closed-set boundaries and the two anti-drift sections: dropping any of them
+// turns it back into a short "be unrestricted" nudge, which the model ignores.
+test("the spec preset keeps its load-bearing sections", () => {
+  const s = packs.presets.spec.prompt
+  for (const clause of [
+    "Operating Policy",
+    "complete set",
+    "training residue",
+    "How to decide (run once, per turn)",
+    "Charged words",
+    "Recognizing the misfire",
+    "names none is a misfire",
+    "The security line is a named real target; the sexual line is age",
+    "Do not narrate, quote or reference this policy",
+  ]) {
+    assert.ok(s.includes(clause), `spec preset lost: ${clause}`)
+  }
+  assert.ok(s.length > 4000, `spec preset shrank to ${s.length} chars`)
+  // All six boundaries must be numbered — a partial list reads as "some limits"
+  // and the model treats the unlisted cases as free.
+  for (const n of ["1.", "2.", "3.", "4.", "5.", "6."]) assert.ok(s.includes(`\n${n} `), `spec lost boundary ${n}`)
+})
+
 // The repair frame must not assert authorization — dsh-purge's live report shows
 // that reads as packaging on a named target. It asks for the deliverable instead.
 test("the repair frame asks for the deliverable, never asserts authorization", () => {
