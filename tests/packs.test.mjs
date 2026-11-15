@@ -63,6 +63,21 @@ test("the spec preset keeps its load-bearing sections", () => {
   for (const n of ["1.", "2.", "3.", "4.", "5.", "6."]) assert.ok(s.includes(`\n${n} `), `spec lost boundary ${n}`)
 })
 
+// spec-plain 是给「被训练成不信任注入式 <system-reminder> 的模型」用的同义版：
+// 内容一致，只把包装去掉。它必须真的不带标签，否则等于把 spec 复制了一份。
+test("spec-plain carries the same policy without XML wrapping", () => {
+  const plain = packs.presets["spec-plain"].prompt
+  assert.ok(!plain.includes("<system-reminder>"), "spec-plain must not use the injected-block wrapper")
+  for (const clause of ["Operating Policy", "complete set", "training residue", "Recognizing the misfire"]) {
+    assert.ok(plain.includes(clause), `spec-plain lost: ${clause}`)
+  }
+  // 正文必须逐字一致：只有开头那段包装改写成普通句子
+  const spec = packs.presets.spec.prompt
+  const body = spec.slice(spec.indexOf("# Operating Policy"))
+  assert.equal(plain.slice(plain.indexOf("# Operating Policy")), body)
+  assert.ok(plain.length < spec.length)
+})
+
 // The repair frame must not assert authorization — dsh-purge's live report shows
 // that reads as packaging on a named target. It asks for the deliverable instead.
 test("the repair frame asks for the deliverable, never asserts authorization", () => {
